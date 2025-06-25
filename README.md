@@ -76,7 +76,7 @@ npm run dev
 
 5. **Query:** Semantic search + LLM call to generate answers
 
----
+
 
 # Performance 
 - **Ingestion:** ~100 documents/min on typical hardware
@@ -85,7 +85,7 @@ npm run dev
 
 - **Embedding:** 768-dim vectors per chunk
 
----
+
 
 ## Agent and Responsibilities
 | Agent           | Main Responsibility                             |
@@ -96,13 +96,13 @@ npm run dev
 | Checklist Agent | Build custom checklist of steps/docs            |
 | Output Agent    | Synthesize and present answers                  |
 
----
+
 
 ## State Structure
 
 See `backend/agentic_state.py` for field definitions.
 
----
+
 
 ## Contributing
 
@@ -110,13 +110,13 @@ See `backend/agentic_state.py` for field definitions.
 - Commit clear messages, PR to main
 - See the Project Board for assignments and progress
 
----
+
 
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
----
+
 
 ## Maintaiers and Contact
 
@@ -132,18 +132,15 @@ Maintainers:&#x20;
 
    GitHub Issues: [https://github.com/okumujustine/AskImmigrate/issues](https://github.com/dunky-star/AskImmigrate/issues)
 
----
+
 
 ## Changelog
 `v2.0.0 (July 2025)`: Multi-agent architecture, new checklists, improved CLI & web UI
 
----
 
 ## Citation
 If you use AskImmigrate2.0 in academic work, please cite:
 Geoffrey Duncan Opiyo, Justine Okumu, Deo Mugabe, Hillary Arinda (2025). AskImmigrate: An AI-powered multi-agent chat assistant for U.S. immigration. GitHub. https://github.com/okumujustine/AskImmigrate2.0
-
-
 
 ---
 
@@ -154,9 +151,4 @@ Geoffrey Duncan Opiyo, Justine Okumu, Deo Mugabe, Hillary Arinda (2025). AskImmi
 - **Contact and team at the end**
 - **Link to project board**
 
----
 
-**Result:**  
-You look polished to reviewers, easy for contributors, and accessible for new users—**all at once**.
-
-Want me to generate the full README for your repo with your exact details and links? Just say so!
