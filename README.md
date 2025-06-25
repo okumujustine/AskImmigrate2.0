@@ -118,7 +118,7 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
 
 
 
-## Maintaiers and Contact
+## Maintainers and Contact
 
 Maintainers:&#x20;
 
