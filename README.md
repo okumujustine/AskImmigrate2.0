@@ -30,6 +30,7 @@ Whether you’re applying for a visa, changing status, or pursuing citizenship, 
 git clone https://github.com/okumujustine/AskImmigrate.git
 cd AskImmigrate
 uv pip install -r requirements.txt
+python -m spacy download en_core_web_sm
 ```
 
 ### Environment Setup
@@ -62,7 +63,13 @@ npm run dev
 ```
 3. Open your browser at [http://localhost:5173](http://localhost:5173) to chat with AskImmigrate 2.0 in the web UI.
 
+## Running Tests
 
+After installation and setup, run all tests with:
+
+```bash
+pytest tests/
+```
 
 ## Methodology
 
