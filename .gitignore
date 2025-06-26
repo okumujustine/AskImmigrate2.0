@@ -3,3 +3,6 @@ backend/__pycache__/
 *.pyc
 backend/agent_nodes/__pycache__/
 tests/__pycache__/
+.DS_Store
+backend/.DS_Store
+backend/config/config_loader.py

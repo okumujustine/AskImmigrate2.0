@@ -2,6 +2,14 @@ from langgraph.graph import StateGraph
 from backend.agentic_state import ImmigrationState
 from backend.agent_nodes.intake import intake_node
 from langchain_core.runnables.graph  import MermaidDrawMethod
+import os
+from dotenv import load_dotenv
+
+
+load_dotenv()
+if os.environ.get("LANGSMITH_TRACING") != "true":
+    print("WARNING: LangSmith tracing is not enabled. Set LANGSMITH_TRACING=true in your environment.")
+
 
 
 def visualize_graph(graph: StateGraph, save_path: str = "outputs/graph.png"):

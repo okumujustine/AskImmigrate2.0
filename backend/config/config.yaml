@@ -1,6 +1,12 @@
-llm: "llama-3.1-8b-instant"
+llms:
+  intake: "llama-3.1-8b-instant"
+  research: "llama-3.1-8b-instant"
+  tool: "llama-3.1-8b-instant"
+  checklist: "llama-3.1-8b-instant"
+  output: "llama-3.1-8b-instant"
 
 vectordb:
+  provider: "chromadb"
   threshold: 0.5
   n_results: 5
 
@@ -8,27 +14,49 @@ memory_strategies:
   trimming_window_size: 6 # Number of messages to keep in trimming strategy (6 would be 3 pairs of Q/A)
   summarization_max_tokens: 1000 # Max tokens before summarization kicks in
 
+
 reasoning_strategies:
-  CoT: |
-    Use this systematic approach to provide your response:
-    1. Break down the problem into smaller steps
-    2. Address each step systematically
-    3. Show your reasoning for each step
-    4. Then provide your final conclusion
+  # Map each agent to a strategy code
+  per_agent:
+    intake: "CoT"
+    research: "ReAct"
+    tool: "ReAct"
+    checklist: "CoT"
+    output: "Self-Ask"
 
-  ReAct: |
-    Use this systematic approach to provide your response:
-    1. Thought: What approaches could I take to solve this?
-    2. Action: Choose and implement the best approach
-    3. Observation: What happened? What did I learn?
-    4. Reflection: Do I have enough information to provide my final answer, or should I try a different approach?
+  # Define each reasoning strategy in full
+  definitions:
+    CoT: |
+      Use this systematic approach to provide your response:
+      1. Break down the problem into smaller steps
+      2. Address each step systematically
+      3. Show your reasoning for each step
+      4. Then provide your final conclusion
 
-    (Repeat steps 1–4 as needed)
+    ReAct: |
+      Use this systematic approach to provide your response:
+      1. Thought: What approaches could I take to solve this?
+      2. Action: Choose and implement the best approach
+      3. Observation: What happened? What did I learn?
+      4. Reflection: Do I have enough information to provide my final answer, or should I try a different approach?
 
-    Then provide your final answer.
+      (Repeat steps 1–4 as needed)
 
-  Self-Ask: |
-    Use this systematic approach to provide your response:
-    1. Break the main question into smaller sub-questions.
-    2. Answer each sub-question thoroughly.
-    3. Then, based on those answers, synthesize a clear and thoughtful final response.
+      Then provide your final answer.
+
+    Self-Ask: |
+      Use this systematic approach to provide your response:
+      1. Break the main question into smaller sub-questions.
+      2. Answer each sub-question thoroughly.
+      3. Then, based on those answers, synthesize a clear and thoughtful final response.
+
+
+
+
+# (Optional) Which agents use web search, PDF parsing, or calculation
+tools_enabled:
+  intake: []
+  research: [web_search, rag_retriever]
+  tool: [pdf_reader, calculator]
+  checklist: []
+  output: []

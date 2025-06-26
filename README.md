@@ -42,6 +42,36 @@ OPENAI_API_KEY=your-open-api-key
 ```
 2. Ensure JSON and PDF source files are accessible on disk.
 
+#### ⚡ LangSmith Observability Setup
+
+AskImmigrate 2.0 supports full agentic tracing with [LangSmith](https://smith.langchain.com).
+
+**Add these variables to your `.env`:**
+
+```env
+LANGSMITH_TRACING=true
+LANGSMITH_ENDPOINT="https://api.smith.langchain.com"
+LANGSMITH_API_KEY=your-langsmith-api-key
+LANGSMITH_PROJECT=AskImmigrate2.0
+```
+**(Optional) If using OpenAI:**
+```env
+OPENAI_API_KEY=your-openai-api-key
+```
+
+Ensure your code loads `env` vars (usually already in backend/graph_workflow.py):
+```bash
+from dotenv import load_dotenv
+load_dotenv()
+```
+
+Run your CLI, workflow, or web UI as normal.
+All LLM calls, agent transitions, and state changes are now logged to your [LangSmith dashboard](https://smith.langchain.com)..
+
+Never commit your `.env` or API keys to git!
+
+
+
 
 ## Usage 
 ### CLI Example
@@ -149,13 +179,5 @@ Maintainers:&#x20;
 If you use AskImmigrate2.0 in academic work, please cite:
 Geoffrey Duncan Opiyo, Justine Okumu, Deo Mugabe, Hillary Arinda (2025). AskImmigrate: An AI-powered multi-agent chat assistant for U.S. immigration. GitHub. https://github.com/okumujustine/AskImmigrate2.0
 
----
-
-## **TL;DR**
-- **Open with end-user “why/what/how”**
-- **Keep install and usage easy to find**
-- **Put agent map, state, and contribution after usage**
-- **Contact and team at the end**
-- **Link to project board**
 
 
