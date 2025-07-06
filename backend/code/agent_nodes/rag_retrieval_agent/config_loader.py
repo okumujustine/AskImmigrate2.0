@@ -1,5 +1,5 @@
-from backend.config import APP_CONFIG_FPATH, PROMPT_CONFIG_FPATH
-from backend.utils import load_yaml_config
+from backend.code.paths import APP_CONFIG_FPATH, PROMPT_CONFIG_FPATH
+from backend.code.utils import load_yaml_config
 
 
 def load_app_config():

@@ -3,7 +3,7 @@ import sqlite3
 from langchain.memory import ConversationBufferMemory
 from langchain_community.chat_message_histories.sql import SQLChatMessageHistory
 
-from app.paths import CHAT_HISTORY_DB_FPATH
+from backend.code.paths import CHAT_HISTORY_DB_FPATH
 
 
 def make_memory(session_id: str) -> ConversationBufferMemory:

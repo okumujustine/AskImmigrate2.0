@@ -1,6 +1,6 @@
 from typing import Any, List
 
-from app.utils import get_collection, get_relevant_documents, initialize_chroma_db
+from backend.code.utils import get_collection, get_relevant_documents, initialize_chroma_db
 
 
 def retrieve_documents(query: str, n_results: int, threshold: float) -> List[Any]:

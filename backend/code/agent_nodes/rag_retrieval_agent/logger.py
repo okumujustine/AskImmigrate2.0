@@ -1,7 +1,7 @@
 import logging
 import os
 
-from app.paths import OUTPUTS_DIR
+from backend.code.paths import OUTPUTS_DIR
 
 logger = logging.getLogger("rag_assistant")
 logger.setLevel(logging.INFO)

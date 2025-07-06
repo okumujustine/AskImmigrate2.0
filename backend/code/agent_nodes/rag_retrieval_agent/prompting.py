@@ -1,4 +1,4 @@
-from app.prompt_builder import build_prompt_from_config
+from prompt_builder import build_prompt_from_config
 
 
 def build_query_prompt(prompt_template, documents, question, history) -> str:
