@@ -5,8 +5,8 @@ import sys
 from dotenv import load_dotenv
 
 from backend.code.agent_nodes.rag_retrieval_agent.chat_logic import chat
-from agent_nodes.memory import list_sessions
-from app.utils import slugify_chat_session
+from backend.code.agent_nodes.rag_retrieval_agent.memory import list_sessions
+from utils import slugify_chat_session
 
 load_dotenv()
 
