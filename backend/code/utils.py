@@ -58,9 +58,9 @@ def initialize_chroma_db(create_new_folder=False):
 
 
 def get_collection(db_instance, collection_name: str) -> chromadb.Collection:
-    custom_terminal_print(f"Retriving {collection_name} collection")
+    custom_terminal_print(f"Retrieving {collection_name} collection instance")
     collection = db_instance.get_or_create_collection(name=collection_name)
-    custom_terminal_print(f"Retrieving {collection_name} collection")
+    custom_terminal_print(f"Retrieved {collection_name} collection instance")
     return collection
 
 

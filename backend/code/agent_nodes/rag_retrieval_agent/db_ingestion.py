@@ -30,8 +30,10 @@ def insert_publications(collection: chromadb.Collection, publications: list[str]
 def execute_db_ingestion():
     db_instance = initialize_chroma_db(create_new_folder=True)
     collection = get_collection(db_instance, collection_name="publications")
-    publications = load_all_publications()
 
+
+
+    publications = load_all_publications()
     custom_terminal_print("Inserting publications to documents")
     insert_publications(collection, publications)
 
