@@ -1,23 +1,33 @@
-import yaml
-import os
-import json
+from functools import lru_cache
+
 import os
 import shutil
 import uuid
-from pathlib import Path
 from typing import Union
 
 import chromadb
-import torch
 import yaml
-from langchain_huggingface import HuggingFaceEmbeddings
+from pathlib import Path
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pdfminer.high_level import extract_text
+from tools.radix_loader import build_kb, stream_nodes
+
 from slugify import slugify
 
 from paths import DATA_DIR, VECTOR_DB_DIR
 
 from paths import APP_CONFIG_FPATH, DATA_DIR
+_RADIX_ROOT = build_kb(Path(DATA_DIR))
+from typing import Iterator
+
+@lru_cache
+def get_cpu_embedder():
+    """HuggingFace sentence-transformer forced onto CPU."""
+    from langchain_huggingface import HuggingFaceEmbeddings
+    return HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-mpnet-base-v2",
+        model_kwargs={"device": "cpu"},
+    )
 
 
 def load_config(config_path: str = APP_CONFIG_FPATH):
@@ -74,28 +84,6 @@ def chunk_publication(
     return text_splitter.split_text(publication)
 
 
-def load_json_publication(json_file):
-    publication_fpath = Path(os.path.join(DATA_DIR, json_file))
-    try:
-        with publication_fpath.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-    except FileNotFoundError as e:
-        raise FileNotFoundError(
-            f"Publication file not found: {publication_fpath}"
-        ) from e
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON in {publication_fpath}: {e}") from e
-
-    text = data.get("text")
-    title = data.get("title")
-    url = data.get("url")
-    if not isinstance(text, str):
-        raise ValueError(
-            f"'text' field is missing or not a string in {publication_fpath}"
-        )
-    return f"title: {title} , url: {url} ,text : {text}"
-
-
 def load_pdf_publication(pdf_file: str) -> str:
     pdf_path = Path(os.path.join(DATA_DIR, pdf_file))
     if not pdf_path.is_file():
@@ -104,18 +92,19 @@ def load_pdf_publication(pdf_file: str) -> str:
     text = extract_text(str(pdf_path))
     return text
 
+# BEGIN (lazy generator)
+def iter_all_publications(publication_dir: str = DATA_DIR) -> Iterator[str]:
+    """Yield every JSON (via Radix) and PDF lazily, one at a time."""
+    # JSON files already resident in Radix memory
+    for _key, doc in stream_nodes(_RADIX_ROOT):
+        yield f"title: {doc.get('title','')} , url: {doc.get('url','')} , text: {doc.get('text','')}"
+    # PDFs still come from disk on demand
+    for pdf_path in Path(publication_dir).rglob("*.pdf"):
+        yield load_pdf_publication(pdf_path.name)
 
+# (optional) keep eager helper for other callers
 def load_all_publications(publication_dir: str = DATA_DIR) -> list[str]:
-    custom_terminal_print(f"loading publictions from {publication_dir}")
-    publications = []
-    for pub_id in os.listdir(publication_dir):
-        if pub_id.lower().endswith(".json"):
-            publications.append(load_json_publication(pub_id))
-        elif pub_id.lower().endswith(".pdf"):
-            publications.append(load_pdf_publication(pub_id))
-    custom_terminal_print("publictions loaded")
-    return publications
-
+    return list(iter_all_publications(publication_dir))
 
 def load_yaml_config(file_path: Union[str, Path]) -> dict:
     custom_terminal_print(f"Loading config from {file_path}")
@@ -133,22 +122,10 @@ def load_yaml_config(file_path: Union[str, Path]) -> dict:
     except IOError as e:
         raise IOError(f"Error reading YAML file: {e}") from e
 
-
 def embed_documents(documents: list[str]) -> list[list[float]]:
-    device = (
-        "cuda"
-        if torch.cuda.is_available()
-        else "mps"
-        if torch.backends.mps.is_available()
-        else "cpu"
-    )
-    model = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-mpnet-base-v2",
-        model_kwargs={"device": device},
-    )
-
+    # use cached CPU embedder
+    model = get_cpu_embedder()
     return model.embed_documents(documents)
-
 
 def get_relevant_documents(
     query: str,
