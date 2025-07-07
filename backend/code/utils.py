@@ -53,6 +53,7 @@ def custom_terminal_print(message: str):
     print("." * 10, message, "." * 10)
 
 def slugify_chat_session(s):
+    print("---", s);
     return f"{slugify(s[:20])}-{uuid.uuid4().hex[:8]}"
 
 def initialize_chroma_db(create_new_folder=False):
