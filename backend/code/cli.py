@@ -7,6 +7,7 @@ Usage: python backend/code/cli.py --question "what is f1?"
 import argparse
 import os
 import sys
+from dotenv import load_dotenv
 
 # Add the project root to Python path
 project_root = os.path.dirname(
@@ -15,6 +16,10 @@ project_root = os.path.dirname(
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+load_dotenv()
+
+# To avoid tokenizer parallelism warning from huggingface
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 def main():
     parser = argparse.ArgumentParser(
