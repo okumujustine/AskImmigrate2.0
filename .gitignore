@@ -5,6 +5,7 @@ tests/__pycache__/
 .DS_Store
 backend/.DS_Store
 backend/vector_db/
+backend/outputs/vector_db/
 backend/config/config_loader.py
 .idea/
 tmp/
