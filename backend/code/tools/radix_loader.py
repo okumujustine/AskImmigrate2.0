@@ -1,6 +1,7 @@
-from pathlib import Path
 import json
-from typing import Any, Dict, List, Iterator, Tuple, Optional
+from pathlib import Path
+from typing import Any, Dict, Iterator, List, Optional, Tuple
+
 """
 Optimized file loading: Radix Tree [Geoffrey Duncan Opiyo]
 
@@ -8,12 +9,13 @@ Radix-tree loader + streaming generator for AskImmigrate 2.0
 -----------------------------------------------------------
 Usage
 -----
-from tools.radix_loader import build_kb, search_prefix, stream_nodes
+from backend.code.tools.radix_loader import build_kb, search_prefix, stream_nodes
 root = build_kb(DATA_DIR)
 docs = search_prefix(root, "EB-")        # list of dicts
 for key, doc in stream_nodes(root):      # lazy DFS
     ...
 """
+
 
 # Internal radix nodes
 def _common_prefix(a: str, b: str) -> int:
@@ -22,12 +24,14 @@ def _common_prefix(a: str, b: str) -> int:
         i += 1
     return i
 
+
 class _Node:
     __slots__ = ("children", "value")
 
     def __init__(self):
         self.children: Dict[str, "_Node"] = {}
         self.value: Optional[Any] = None
+
 
 def _insert(root: _Node, key: str, value: Any) -> None:
     node, rest = root, key
@@ -49,11 +53,13 @@ def _insert(root: _Node, key: str, value: Any) -> None:
             node, rest = new, ""
     node.value = value
 
+
 def _collect(node: _Node, out: list) -> None:
     if node.value is not None:
         out.append(node.value)
     for child in node.children.values():
         _collect(child, out)
+
 
 def _search(root: _Node, prefix: str) -> List[Any]:
     node, rest = root, prefix
@@ -72,6 +78,7 @@ def _search(root: _Node, prefix: str) -> List[Any]:
     out: list = []
     _collect(node, out)
     return out
+
 
 # Public helpers
 def build_kb(data_dir: Path) -> _Node:
