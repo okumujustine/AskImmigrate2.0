@@ -4,7 +4,7 @@ from backend.code.agent_nodes.rag_retrieval_agent.config_loader import (
     load_app_config,
     load_prompt_config,
 )
-from backend.code.agent_nodes.rag_retrieval_agent.logger import setup_logging
+from backend.code.agent_nodes.rag_retrieval_agent.chat_logger import setup_logging
 from backend.code.agent_nodes.rag_retrieval_agent.memory import make_memory
 from backend.code.agent_nodes.rag_retrieval_agent.prompting import build_query_prompt
 from backend.code.agent_nodes.rag_retrieval_agent.retrieval import retrieve_documents
