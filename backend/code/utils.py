@@ -1,29 +1,27 @@
-from functools import lru_cache
-
 import os
 import shutil
 import uuid
-from typing import Union
+from functools import lru_cache
+from pathlib import Path
+from typing import Iterator, Union
 
 import chromadb
 import yaml
-from pathlib import Path
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pdfminer.high_level import extract_text
-from tools.radix_loader import build_kb, stream_nodes
-
 from slugify import slugify
 
-from paths import DATA_DIR, VECTOR_DB_DIR
+from backend.code.paths import APP_CONFIG_FPATH, DATA_DIR, VECTOR_DB_DIR
+from backend.code.tools.radix_loader import build_kb, stream_nodes
 
-from paths import APP_CONFIG_FPATH, DATA_DIR
 _RADIX_ROOT = build_kb(Path(DATA_DIR))
-from typing import Iterator
+
 
 @lru_cache
 def get_cpu_embedder():
     """HuggingFace sentence-transformer forced onto CPU."""
     from langchain_huggingface import HuggingFaceEmbeddings
+
     return HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-mpnet-base-v2",
         model_kwargs={"device": "cpu"},
@@ -33,6 +31,7 @@ def get_cpu_embedder():
 def load_config(config_path: str = APP_CONFIG_FPATH):
     with open(config_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
+
 
 def load_immigration_example(example_number: int) -> str:
     """
@@ -49,11 +48,14 @@ def load_immigration_example(example_number: int) -> str:
     with open(full_path, "r", encoding="utf-8") as f:
         return f.read()
 
+
 def custom_terminal_print(message: str):
     print("." * 10, message, "." * 10)
 
+
 def slugify_chat_session(s):
     return f"{slugify(s[:20])}-{uuid.uuid4().hex[:8]}"
+
 
 def initialize_chroma_db(create_new_folder=False):
     custom_terminal_print("Initializing chroma db")
@@ -92,19 +94,22 @@ def load_pdf_publication(pdf_file: str) -> str:
     text = extract_text(str(pdf_path))
     return text
 
+
 # BEGIN (lazy generator)
 def iter_all_publications(publication_dir: str = DATA_DIR) -> Iterator[str]:
     """Yield every JSON (via Radix) and PDF lazily, one at a time."""
     # JSON files already resident in Radix memory
     for _key, doc in stream_nodes(_RADIX_ROOT):
-        yield f"title: {doc.get('title','')} , url: {doc.get('url','')} , text: {doc.get('text','')}"
+        yield f"title: {doc.get('title', '')} , url: {doc.get('url', '')} , text: {doc.get('text', '')}"
     # PDFs still come from disk on demand
     for pdf_path in Path(publication_dir).rglob("*.pdf"):
         yield load_pdf_publication(pdf_path.name)
 
+
 # (optional) keep eager helper for other callers
 def load_all_publications(publication_dir: str = DATA_DIR) -> list[str]:
     return list(iter_all_publications(publication_dir))
+
 
 def load_yaml_config(file_path: Union[str, Path]) -> dict:
     custom_terminal_print(f"Loading config from {file_path}")
@@ -122,10 +127,12 @@ def load_yaml_config(file_path: Union[str, Path]) -> dict:
     except IOError as e:
         raise IOError(f"Error reading YAML file: {e}") from e
 
+
 def embed_documents(documents: list[str]) -> list[list[float]]:
     # use cached CPU embedder
     model = get_cpu_embedder()
     return model.embed_documents(documents)
+
 
 def get_relevant_documents(
     query: str,
