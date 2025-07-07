@@ -15,8 +15,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-
-
 # Environments
 .env
 .venv
@@ -34,11 +32,9 @@ test.py
 
 repo/
 
-*.pngtmp/
+*.png
+tmp/
 temp.json
 
-
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
+/backend/outputs/*
+/backend/outputs/vector_db/*
