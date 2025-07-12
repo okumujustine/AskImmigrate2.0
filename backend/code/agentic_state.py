@@ -34,7 +34,7 @@ class References(BaseModel):
     references: List[Reference] = Field(description="List of references.")
 
 class ReviewOutput(BaseModel):
-    # Individual component approval and feedback
+    # Each component approval and feedback
     rag_retriever_approved: bool = Field(description="Whether the RAG summary is approved")
     rag_retriever_feedback: str = Field(description="Specific feedback for the RAG summary")
     synthesis_approved: bool = Field(description="Whether the synthesis is approved")
