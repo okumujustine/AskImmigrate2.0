@@ -1,4 +1,4 @@
-from backend.code.agent_nodes.rag_retrieval_agent.prompt_builder import (
+from backend.code.prompt_builder import (
     build_prompt_from_config,
 )
 

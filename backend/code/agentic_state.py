@@ -1,38 +1,47 @@
 
 from typing import TypedDict, List, Dict, Any, Optional
+from pydantic import BaseModel, Field
 
 class ImmigrationState(TypedDict, total=False):
-    # ---- User Input & Core Context ----
-    user_question: str
-    """The current user’s main question or request, as typed in the chat or CLI."""
+    """State class for the content processing graph."""
 
-   # visa_type: Optional[str]
-    """Short code for the user’s current or target visa/status (e.g., 'F-1', 'J-1', 'B-2', 'H-1B')."""
+    text: str
+    visa_type: Optional[str]
+    visa_fee: Optional[float]
+    references: Optional[List[str]]
+    manager_decision: Optional[str]
+    revision_round: Optional[int]
+    needs_revision: Optional[bool]
+    # Individual feedback for level 2 nodes
+    synthesis_feedback: Optional[str]
+    rag_retriever_feedback: Optional[str]
+    references_feedback: Optional[str]
+    # Individual approval status for components
+    synthesis_approved: Optional[bool]
+    rag_retriever_approved: Optional[bool]
+    references_approved: Optional[bool]
 
-   # country: Optional[str]
-    """User’s country of origin or nationality (used for eligibility/rules)."""
+class SearchQueries(BaseModel):
+    queries: List[str] = Field(
+        description="The search queries to find relevant references"
+    )
 
-    # ---- RAG & Retrieval ----
-    retrieved_chunks: List[str]
-    """Relevant text snippets or passages pulled from ChromaDB, PDFs, or web search to help answer the question."""
+class Reference(BaseModel):
+    url: str = Field(description="The URL of the reference")
+    title: str = Field(description="The title of the reference")
 
-    # ---- Form & Checklist Suggestions ----
-    #forms: List[str]
-    """List of official immigration forms (e.g., 'I-20', 'I-485') recommended for the user’s scenario."""
+class References(BaseModel):
+    references: List[Reference] = Field(description="List of references.")
 
-    #checklist: List[str]
-    """Step-by-step tasks or document list generated for the user (e.g., 'Collect bank statements', 'Submit DS-160')."""
+class ReviewOutput(BaseModel):
+    # Individual component approval and feedback
+    rag_retriever_approved: bool = Field(description="Whether the RAG summary is approved")
+    rag_retriever_feedback: str = Field(description="Specific feedback for the RAG summary")
+    synthesis_approved: bool = Field(description="Whether the synthesis is approved")
+    synthesis_feedback: str = Field(description="Specific feedback for the synthesis")
+    references_approved: bool = Field(description="Whether the references are approved")
+    references_feedback: str = Field(description="Specific feedback for the references")
 
-    # ---- Conversation & Output ----
-    #answer: Optional[str]
-    """The final summarized answer or advice to return to the user."""
 
-    messages: List[Dict[str, Any]]
-    """History of all messages exchanged in the session (user, bot, agents)."""
 
-    #completed: Optional[bool]
-    """Flag: True if the user has finished or exited this session, False/None otherwise."""
 
-    # ---- (For Future Expansion) ----
-    # timeline: List[str]
-    # """Optional: Key immigration dates/events. Placeholder for future timeline features."""
