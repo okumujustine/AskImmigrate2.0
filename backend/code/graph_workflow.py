@@ -121,12 +121,12 @@ if __name__ == "__main__":
     print("ASK US IMMIGRATION AGENT")
     print("=" * 80)
 
-    results = run_agentic_askimmigrate(text="What is F-1 visa")
+    results = run_agentic_askimmigrate(text="What is F1 visa to Eb2 visa process?")
 
     print("\n" + "=" * 80)
     print("📋 FINAL PROCESSING RESULTS")
     print("=" * 80)
 
     if results:
-        print(f"\n\n📌 visa_type: {results.get('visa_type', 'N/A')}")
+        print(f"\n\n📌 visa_type: {results.get('visa_type', 'visa_type')}")
         print(f"\n\n📚 References: {(results.get('references', []))}")

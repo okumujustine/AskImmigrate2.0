@@ -25,7 +25,7 @@ def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
 
     # Get tools available to synthesis agent
     tools = get_tools_by_agent("synthesis")
-    llm = get_llm(config.get("llm", "gpt-4-turbo"))
+    llm = get_llm(config.get("llm", "gpt-4o-mini"))
     
     # Bind tools to the LLM
     llm_with_tools = llm.bind_tools(tools)

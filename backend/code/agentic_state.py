@@ -41,7 +41,3 @@ class ReviewOutput(BaseModel):
     synthesis_feedback: str = Field(description="Specific feedback for the synthesis")
     references_approved: bool = Field(description="Whether the references are approved")
     references_feedback: str = Field(description="Specific feedback for the references")
-
-
-
-

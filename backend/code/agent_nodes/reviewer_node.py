@@ -112,7 +112,6 @@ def reviewer_node(state: ImmigrationState) -> Dict[str, Any]:
             "revision_round": revision_round,
         }
 
-
 def route_from_reviewer(
         state: ImmigrationState,
 ) -> Literal["synthesis", "end"]:
