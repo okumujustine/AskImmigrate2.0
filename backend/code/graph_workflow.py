@@ -98,7 +98,7 @@ def run_agentic_askimmigrate(text: str) -> Dict[str, Any]:
     initial_state = ImmigrationState(
         text=text,
         visa_type=None,
-        visa_fee=None,
+        visa_fee=0.0,
         references=[],
         manager_decision=None,
         revision_round=0,
