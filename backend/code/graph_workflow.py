@@ -3,15 +3,15 @@ from typing import Dict, Any
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
 
-from backend.code.agent_nodes import manager_node, synthesis_node, reviewer_node
-from backend.code.agent_nodes.reviewer_node import route_from_reviewer
+from backend.code.agent_nodes.manager_node import manager_node
+from backend.code.agent_nodes.synthesis_node import synthesis_node
+from backend.code.agent_nodes.reviewer_node import reviewer_node, route_from_reviewer
 from backend.code.agentic_state import ImmigrationState
-from langchain_core.runnables.graph  import MermaidDrawMethod
+from langchain_core.runnables.graph import MermaidDrawMethod
 import os
 from dotenv import load_dotenv
 
 from backend.code.paths import OUTPUTS_DIR
-from backend.code.tools import rag_retrieval_node
 
 load_dotenv()
 if os.environ.get("LANGSMITH_TRACING") != "true":
@@ -19,32 +19,31 @@ if os.environ.get("LANGSMITH_TRACING") != "true":
 
 def create_ask_immigrate_graph() -> StateGraph:
     """
-    Creates and returns the agentic AskImmigrate2.0 graph with hierarchical structure and feedback loop.
+    Creates and returns the agentic AskImmigrate2.0 graph with clean agent/tool separation.
+    Agents: manager, synthesis, reviewer (coordinate and make decisions)
+    Tools: registered via tool_registry and used by agents as needed
     """
     # Create the graph
     graph = StateGraph(ImmigrationState)
 
-    # Add nodes
-    # Level 1: Manager
+    # Add agent nodes (no tools as nodes)
+    # Level 1: Manager (coordinates workflow)
     graph.add_node("manager", manager_node)
 
-    # Level 2: Processing nodes
-    graph.add_node("rag_retriever", rag_retrieval_node)
+    # Level 2: Processing agent (uses tools)
     graph.add_node("synthesis", synthesis_node)
 
-    # Level 3: Reviewer
+    # Level 3: Reviewer (quality control)
     graph.add_node("reviewer", reviewer_node)
 
-    # Add edges - hierarchical structure with feedback loop
+    # Add edges - simplified structure
     # START -> Manager (Level 1)
     graph.add_edge(START, "manager")
 
-    # Manager -> All Level 2 nodes (parallel processing)
-    graph.add_edge("manager", "rag_retriever")
+    # Manager -> Synthesis (Level 2)
     graph.add_edge("manager", "synthesis")
 
-    # All Level 2 nodes -> Reviewer (Level 3)
-    graph.add_edge("rag_retriever", "reviewer")
+    # Synthesis -> Reviewer (Level 3)
     graph.add_edge("synthesis", "reviewer")
 
     # Conditional edges from reviewer
@@ -52,9 +51,8 @@ def create_ask_immigrate_graph() -> StateGraph:
         "reviewer",
         route_from_reviewer,
         {
-            "rag_retriever": "rag_retriever",
-            "synthesis": "synthesis",
-            "end": END,
+            "synthesis": "synthesis",  # Route back to synthesis for revision
+            "end": END,                # Or end if approved
         },
     )
 
@@ -130,5 +128,5 @@ if __name__ == "__main__":
     print("=" * 80)
 
     if results:
-        print(f"\n\n📌 Title: {results.get('title', 'N/A')}")
+        print(f"\n\n📌 visa_type: {results.get('visa_type', 'N/A')}")
         print(f"\n\n📚 References: {(results.get('references', []))}")

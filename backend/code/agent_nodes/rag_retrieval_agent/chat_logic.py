@@ -6,8 +6,8 @@ from backend.code.agent_nodes.rag_retrieval_agent.config_loader import (
 )
 from backend.code.agent_nodes.rag_retrieval_agent.chat_logger import setup_logging
 from backend.code.agent_nodes.rag_retrieval_agent.memory import make_memory
-from backend.code.agent_nodes.rag_retrieval_agent.prompting import build_query_prompt
-from backend.code.tools.rag_retrieval_node import retrieve_documents
+from backend.code.tools.rag_prompt_utils import build_query_prompt
+from backend.code.utils import get_collection, get_relevant_documents, initialize_chroma_db
 
 
 def respond_to_query(llm: str, prompt: str) -> str:
@@ -21,8 +21,12 @@ def chat(session_id: str, question: str) -> str:
     prompt_cfg = load_prompt_config()
 
     mem = make_memory(str(session_id))
-    docs = retrieve_documents(
+    # Use existing utils functions for document retrieval
+    db_instance = initialize_chroma_db()
+    collection = get_collection(db_instance, collection_name="publications")
+    docs = get_relevant_documents(
         question,
+        collection,
         n_results=app_cfg["vectordb"]["n_results"],
         threshold=app_cfg["vectordb"]["threshold"],
     )

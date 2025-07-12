@@ -11,6 +11,10 @@ def get_llm(model_name: str, temperature: float = 0.2) -> BaseChatModel:
         return ChatOpenAI(model="gpt-4o-mini", temperature=temperature)
     elif model_name == "gpt-4o":
         return ChatOpenAI(model="gpt-4o", temperature=temperature)
+    elif model_name == "gpt-4-turbo":
+        return ChatOpenAI(model="gpt-4-turbo", temperature=temperature)
+    elif model_name == "gpt-4-mini":
+        return ChatOpenAI(model="gpt-4-mini", temperature=temperature)
     elif model_name == "llama3-8b-8192":
         return ChatGroq(model="llama3-8b-8192", temperature=temperature)
     else:
