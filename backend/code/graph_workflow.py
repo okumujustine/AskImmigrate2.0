@@ -120,7 +120,7 @@ def run_agentic_askimmigrate(text: str) -> Dict[str, Any]:
 
 if __name__ == "__main__":
     print("=" * 80)
-    print("🚀 CONTENT PROCESSING WORKFLOW DEMO")
+    print("ASK US IMMIGRATION AGENT")
     print("=" * 80)
 
     results = run_agentic_askimmigrate(text="What is F-1 visa")
