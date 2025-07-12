@@ -51,7 +51,7 @@ def reviewer_node(state: ImmigrationState) -> Dict[str, Any]:
         if revision_round >= max_revisions and not overall_approved:
             overall_approved = True  # Force approve all remaining components
             response.rag_retriever_approved = True
-            response.title_approved = True
+            response.synthesis_approved = True
             response.references_approved = True
 
         status = "approved" if overall_approved else "needs_revision"
@@ -74,7 +74,7 @@ def reviewer_node(state: ImmigrationState) -> Dict[str, Any]:
             if not response.rag_retriever_approved:
                 needs_revision_list.append("RAG")
             if not response.synthesis_approved:
-                needs_revision_list.append("Title")
+                needs_revision_list.append("Synthesis")
             if not response.references_approved:
                 needs_revision_list.append("References")
 
@@ -115,7 +115,7 @@ def reviewer_node(state: ImmigrationState) -> Dict[str, Any]:
 
 def route_from_reviewer(
         state: ImmigrationState,
-) -> Literal["revision_dispatcher", "end"]:
+) -> Literal["synthesis", "end"]:
     """
     Conditional routing function that determines whether to dispatch revisions or end.
     """
@@ -128,13 +128,8 @@ def route_from_reviewer(
         print("✅ All components approved - routing to END")
         return "end"
     else:
-        print("🔄 Some components need revision - routing to revision dispatcher")
-        route_to = []
-        if not rag_retriever_approved:
-            route_to.append("rag_retriever")
-        if not synthesis_approved:
-            route_to.append("synthesis")
-        if not references_approved:
-            route_to.append("web_search_references")
-
-        return route_to
+        print("🔄 Some components need revision")
+        # In the simplified architecture, all revisions go through synthesis
+        # which will use appropriate tools (RAG, web search, fee calculator)
+        print("🔄 Routing to synthesis for revision (will use appropriate tools)")
+        return "synthesis"
