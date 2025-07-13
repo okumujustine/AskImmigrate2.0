@@ -43,4 +43,5 @@ def format_tavidy_results(raw_results, query):
 
 @tool
 def web_search_tool(query: str, num_results: int = 3) -> List[Dict[str, Any]]:
+    """Performs a web search and returns structured results."""
     return tavidy_run_search(query, k=num_results)
