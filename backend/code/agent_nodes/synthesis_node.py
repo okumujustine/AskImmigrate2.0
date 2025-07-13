@@ -74,8 +74,32 @@ def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
         
         print(f"✅ Synthesis completed: {synthesis_content[:100]}...")
         
+        # Extract key information from tool results for state
+        rag_response = ""
+        visa_type = ""
+        visa_fee = 0.0
+        references = []
+        
+        # Extract from RAG tool results
+        if "rag_retrieval_tool" in tool_results:
+            rag_data = tool_results["rag_retrieval_tool"]
+            rag_response = rag_data.get("response", "")
+            references.extend(rag_data.get("references", []))
+        
+        # Extract from fee calculator results
+        fee_tool_results = [v for k, v in tool_results.items() if "fee_calculator_tool" in k]
+        if fee_tool_results:
+            fee_data = fee_tool_results[0]  # Take first fee result
+            if fee_data.get("success", False):
+                visa_type = fee_data.get("visa_type", "")
+                visa_fee = fee_data.get("fees", {}).get("total", 0.0)
+        
         return {
             "synthesis": synthesis_content,
+            "rag_response": rag_response,
+            "visa_type": visa_type, 
+            "visa_fee": visa_fee,
+            "references": references,
             "tool_results": tool_results,
             "tools_used": [tool_call['name'] for tool_call in tool_calls]
         }
@@ -84,6 +108,10 @@ def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
         print(f"❌ Synthesis failed: {e}")
         return {
             "synthesis": f"Error during synthesis: {str(e)}",
+            "rag_response": f"Error during synthesis: {str(e)}",
+            "visa_type": "",
+            "visa_fee": 0.0,
+            "references": [],
             "tool_results": {},
             "tools_used": []
         }
