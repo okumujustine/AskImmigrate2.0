@@ -123,7 +123,7 @@ if __name__ == "__main__":
     print("ASK US IMMIGRATION AGENT")
     print("=" * 80)
 
-    results = run_agentic_askimmigrate(text="What is F1 visa to Eb2 visa process?")
+    results = run_agentic_askimmigrate(text="How do I apply for it?")
     print(results)
 
     print("\n" + "=" * 80)
