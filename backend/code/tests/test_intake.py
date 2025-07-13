@@ -1,4 +1,4 @@
-from backend.agent_nodes.intake import intake_node
+from backend.code.agent_nodes.intake import intake_node
 
 def test_extract_country_and_visa():
     state = {"user_question": "Can I switch from B-2 to F-1 if I am from Uganda?"}
