@@ -2,6 +2,7 @@ from typing import Dict, Any
 
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from backend.code.agent_nodes.manager_node import manager_node
 from backend.code.agent_nodes.synthesis_node import synthesis_node
@@ -17,7 +18,7 @@ load_dotenv()
 if os.environ.get("LANGSMITH_TRACING") != "true":
     print("WARNING: LangSmith tracing is not enabled. Set LANGSMITH_TRACING=true in your environment.")
 
-def create_ask_immigrate_graph() -> StateGraph:
+def create_ask_immigrate_graph() -> CompiledStateGraph:
     """
     Creates and returns the agentic AskImmigrate2.0 graph with clean agent/tool separation.
     Agents: manager, synthesis, reviewer (coordinate and make decisions)
