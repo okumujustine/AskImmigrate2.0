@@ -96,7 +96,8 @@ def run_agentic_askimmigrate(text: str) -> Dict[str, Any]:
     # Create initial state
     initial_state = ImmigrationState(
         text=text,
-        visa_type=None,
+        rag_response="",
+        visa_type="",
         visa_fee=0.0,
         references=[],
         manager_decision=None,
@@ -123,6 +124,7 @@ if __name__ == "__main__":
     print("=" * 80)
 
     results = run_agentic_askimmigrate(text="What is F1 visa to Eb2 visa process?")
+    print(results)
 
     print("\n" + "=" * 80)
     print("📋 FINAL PROCESSING RESULTS")
@@ -130,4 +132,5 @@ if __name__ == "__main__":
 
     if results:
         print(f"\n\n📌 visa_type: {results.get('visa_type', 'visa_type')}")
+        print(f"\n\n📌 rag_response: {results.get('rag_response', 'rag_response')}")
         print(f"\n\n📚 References: {(results.get('references', []))}")

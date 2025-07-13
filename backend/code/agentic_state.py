@@ -6,7 +6,8 @@ class ImmigrationState(TypedDict, total=False):
     """State class for the content processing graph."""
 
     text: str
-    visa_type: Optional[str]
+    rag_response: str
+    visa_type: str
     visa_fee: Optional[float]
     references: Optional[List[str]]
     manager_decision: Optional[str]

@@ -1,4 +1,5 @@
-from langchain_groq import ChatGroq
+# from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
 
 from backend.code.agent_nodes.rag_retrieval_agent.config_loader import (
     load_app_config,
@@ -11,7 +12,7 @@ from backend.code.utils import get_collection, get_relevant_documents, initializ
 
 
 def respond_to_query(llm: str, prompt: str) -> str:
-    groq = ChatGroq(model=llm)
+    groq = ChatOpenAI(model=llm)
     return groq.invoke(prompt).content  # type: ignore
 
 
