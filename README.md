@@ -98,7 +98,7 @@ User Question → Manager Agent → Synthesis Agent → Reviewer Agent → Respo
 
 ### Prerequisites
 - **Python**: 3.10+
-- - **Node.js**: >=18.0.0 and <21.0.0  (for React frontend)
+- **Node.js**: >=18.0.0 and <21.0.0  (for React frontend)
 - **API key** (GROQ or OpenAI)
 
 ### Installation
