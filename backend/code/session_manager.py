@@ -534,5 +534,49 @@ class SessionManager:
             print(f"❌ SessionManager: Error listing sessions: {e}")
             return []
 
+    def get_unique_session_ids(self) -> List[str]:
+        """
+        Returns a list of all unique session IDs in the sessions table.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute("SELECT DISTINCT session_id FROM sessions")
+                session_ids = [row[0] for row in cursor.fetchall()]
+                return session_ids
+        except Exception as e:
+            print(f"❌ SessionManager: Error retrieving unique session IDs: {e}")
+            return []
+        
+    def get_answer_by_session(self, session_id: str) -> Dict[str, Any]:
+        """
+        Retrieves session metadata for a specific session_id from the sessions table.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    "SELECT * FROM sessions WHERE session_id = ?",
+                    (session_id,)
+                ).fetchall()
+                return dict(row) if row else {}
+        except Exception as e:
+            print(f"❌ SessionManager: Error retrieving session metadata for {session_id}: {e}")
+            return {}
+    def get_last_answer_by_session(self, session_id: str) -> Optional[str]:
+        """
+        Retrieves the last answer for a specific session_id.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    "SELECT answer FROM conversation_turns WHERE session_id = ? ORDER BY turn_number DESC LIMIT 1",
+                    (session_id,)
+                ).fetchone()
+                return row['answer'] if row else None
+        except Exception as e:
+            print(f"❌ SessionManager: Error retrieving last answer for {session_id}: {e}")
+            return None
+    
 # Global session manager instance
 session_manager = SessionManager()
