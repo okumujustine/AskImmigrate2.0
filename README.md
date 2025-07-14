@@ -320,27 +320,6 @@ python backend/code/tests/test_agentic_session.py
 
 ---
 
-## 📈 Roadmap
-
-### **Version 2.1 (Q1 2025)**
-- [ ] Advanced session analytics and insights
-- [ ] Multi-language support (Spanish, Chinese)
-- [ ] Voice interface integration
-- [ ] Mobile app development
-
-### **Version 2.2 (Q2 2025)**
-- [ ] Immigration attorney integration
-- [ ] Document upload and analysis
-- [ ] Case tracking and reminders
-- [ ] Community features and forums
-
-### **Version 3.0 (Q3 2025)**
-- [ ] Predictive immigration planning
-- [ ] Integration with official USCIS systems
-- [ ] Advanced form filling assistance
-- [ ] Professional immigration consultant tools
-
----
 
 ## 📄 License
 
