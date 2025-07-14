@@ -112,7 +112,7 @@ npm install
 ```
 
 ### Environment Setup
-Create `.env` file:
+Create `.env` file in the repository root directory:
 ```bash
 # Choose one:
 GROQ_API_KEY=your-groq-api-key          # Recommended: Fast + Free tier
