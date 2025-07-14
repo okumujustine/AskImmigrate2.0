@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import FastAPI, Query
 from pydantic import BaseModel
 from typing import List, Optional
@@ -37,9 +39,12 @@ def query_agentic_system(request: QueryRequest):
     # For now, just echo the question and session_id
     # You can call your agentic system here and return the result
     from backend.code.graph_workflow import run_agentic_askimmigrate
-    
-    results = run_agentic_askimmigrate(text=request.question, session_id=request.session_id)
-    return session_manager.get_last_answer_by_session_id(request.session_id)
+
+    from backend.code.utils import slugify_chat_session
+
+    session_id = request.session_id or slugify_chat_session(request.question)
+    run_agentic_askimmigrate(text=request.question, session_id=session_id)
+    return {"answer": session_manager.get_last_answer_by_session(session_id), "session_id": session_id}
     
 
 @app.get("/session-ids", response_model=List[str])
@@ -50,3 +55,9 @@ def get_session_ids():
     sessions = session_manager.list_all_sessions()
     return [session["session_id"] for session in sessions]
 
+@app.get("/answers/{session_id}")
+def get_answer_by_session_id(session_id: str):
+    """
+    Returns the last answer for a given session ID.
+    """
+    return session_manager.get_answers_by_session(session_id)

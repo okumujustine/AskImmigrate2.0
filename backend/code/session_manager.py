@@ -546,22 +546,36 @@ class SessionManager:
         except Exception as e:
             print(f"❌ SessionManager: Error retrieving unique session IDs: {e}")
             return []
-        
-    def get_answer_by_session(self, session_id: str) -> Dict[str, Any]:
+
+    from typing import List, Dict, Any
+    import sqlite3
+
+    def get_answers_by_session(self, session_id: str) -> List[Dict[str, Any]]:
         """
-        Retrieves session metadata for a specific session_id from the sessions table.
+        Return *all* (question, answer) rows for the given session_id.
+
+        Example result:
+            [
+                {"question": "Hi?", "answer": "Hello!"},
+                {"question": "How are you?", "answer": "Great."},
+                ...
+            ]
+
+        Empty list ⇢ no rows found.
         """
         try:
             with sqlite3.connect(self.db_path) as conn:
-                conn.row_factory = sqlite3.Row
-                row = conn.execute(
-                    "SELECT * FROM sessions WHERE session_id = ?",
+                conn.row_factory = sqlite3.Row  # map-like rows
+                cursor = conn.execute(
+                    "SELECT question, answer FROM conversation_turns WHERE session_id = ?",
                     (session_id,)
-                ).fetchall()
-                return dict(row) if row else {}
-        except Exception as e:
-            print(f"❌ SessionManager: Error retrieving session metadata for {session_id}: {e}")
-            return {}
+                )
+                rows = cursor.fetchall()  # all rows
+                return [dict(r) for r in rows]  # list[dict]
+        except sqlite3.Error as e:  # narrow the catch
+            print(f"❌ SessionManager: DB error for {session_id}: {e}")
+            return []
+
     def get_last_answer_by_session(self, session_id: str) -> Optional[str]:
         """
         Retrieves the last answer for a specific session_id.
