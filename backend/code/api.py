@@ -1,11 +1,21 @@
 from datetime import datetime
+from typing import List, Optional
 
 from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional
+
 from backend.code.session_manager import session_manager
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class SessionQA(BaseModel):
@@ -26,12 +36,16 @@ def get_session_qa():
         turns = session_manager.load_conversation_history(session_id, limit=1000)
         questions = [turn.question for turn in turns]
         answers = [turn.answer for turn in turns]
-        grouped.append(SessionQA(session_id=session_id, questions=questions, answers=answers))
+        grouped.append(
+            SessionQA(session_id=session_id, questions=questions, answers=answers)
+        )
     return grouped
+
 
 class QueryRequest(BaseModel):
     question: str
     session_id: Optional[str] = None
+
 
 @app.post("/query")
 def query_agentic_system(request: QueryRequest):
@@ -39,13 +53,15 @@ def query_agentic_system(request: QueryRequest):
     # For now, just echo the question and session_id
     # You can call your agentic system here and return the result
     from backend.code.graph_workflow import run_agentic_askimmigrate
-
     from backend.code.utils import slugify_chat_session
 
     session_id = request.session_id or slugify_chat_session(request.question)
     run_agentic_askimmigrate(text=request.question, session_id=session_id)
-    return {"answer": session_manager.get_last_answer_by_session(session_id), "session_id": session_id}
-    
+    return {
+        "answer": session_manager.get_last_answer_by_session(session_id),
+        "session_id": session_id,
+    }
+
 
 @app.get("/session-ids", response_model=List[str])
 def get_session_ids():
@@ -54,6 +70,7 @@ def get_session_ids():
     """
     sessions = session_manager.list_all_sessions()
     return [session["session_id"] for session in sessions]
+
 
 @app.get("/answers/{session_id}")
 def get_answer_by_session_id(session_id: str):

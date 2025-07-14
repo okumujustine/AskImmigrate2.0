@@ -51,12 +51,11 @@ def load_immigration_example(example_number: int) -> str:
 
 def custom_terminal_print(message: str, verbose: bool = False):
     """Print messages with optional verbosity control for cleaner output"""
-    if verbose or os.getenv("ASKIMMIGRATE_VERBOSE", "false").lower() == "true":
-        print("." * 10, message, "." * 10)
+    # if verbose or os.getenv("ASKIMMIGRATE_VERBOSE", "false").lower() == "true":
+    print("." * 10, message, "." * 10)
 
 
 def slugify_chat_session(s):
-    print("---", s);
     return f"{slugify(s[:20])}-{uuid.uuid4().hex[:8]}"
 
 
