@@ -106,9 +106,9 @@ User Question → Manager Agent → Synthesis Agent → Reviewer Agent → Respo
 git clone https://github.com/okumujustine/AskImmigrate.git
 cd AskImmigrate2.0
 pip install -r requirements.txt
+python -m backend.code.embed_documents
 cd frontend
 npm install
-python -m backend.code.embed_documents
 ```
 
 ### Environment Setup
