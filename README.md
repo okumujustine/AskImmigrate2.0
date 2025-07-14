@@ -97,9 +97,9 @@ User Question → Manager Agent → Synthesis Agent → Reviewer Agent → Respo
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.10+
-- Node.js 18+ (for React frontend)
-- API key (GROQ or OpenAI)
+- **Python**: 3.10+
+- - **Node.js**: >=18.0.0 and <21.0.0  (for React frontend)
+- **API key** (GROQ or OpenAI)
 
 ### Installation
 ```bash
@@ -107,7 +107,7 @@ git clone https://github.com/okumujustine/AskImmigrate.git
 cd AskImmigrate2.0
 pip install -r requirements.txt
 cd frontend
-pip npm install
+npm install
 python -m backend.code.embed_documents
 ```
 
@@ -180,7 +180,7 @@ python backend/code/cli.py --agent --list-sessions
 
 ### Start Backend Server
 ```bash
-uvicorn backend.main:app --reload --port 9000
+uvicorn backend.code.main:app --reload --port 9000
 ```
 
 ### Start Frontend (Optional)
