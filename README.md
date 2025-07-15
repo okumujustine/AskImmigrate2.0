@@ -180,7 +180,7 @@ python backend/code/cli.py --agent --list-sessions
 
 ### Start Backend Server
 ```bash
-uvicorn backend.code.main:app --reload --port 9000
+ uvicorn backend.code.api:app --host 0.0.0.0 --port 8088
 ```
 
 ### Start Frontend (Optional)
