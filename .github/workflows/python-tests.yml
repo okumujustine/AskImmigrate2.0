@@ -21,4 +21,4 @@ jobs:
           pip install -r requirements.txt
           python -m spacy download en_core_web_sm
       - name: Run tests
-        run: pytest tests/
+        run: pytest backend/tests
