@@ -11,6 +11,10 @@ interface BrowserInfo {
   timezone: string;
   cookieEnabled: boolean;
   doNotTrack: string | null;
+  browserName: string;
+  browserVersion: string;
+  hardwareConcurrency: number;
+  deviceMemory: number | undefined;
 }
 
 /**
@@ -27,6 +31,47 @@ function simpleHash(str: string): string {
 }
 
 /**
+ * Detect browser name from user agent
+ */
+function getBrowserName(): string {
+  const userAgent = navigator.userAgent;
+  if (userAgent.includes('Chrome') && !userAgent.includes('Edg')) return 'Chrome';
+  if (userAgent.includes('Edg')) return 'Edge';
+  if (userAgent.includes('Firefox')) return 'Firefox';
+  if (userAgent.includes('Safari') && !userAgent.includes('Chrome')) return 'Safari';
+  if (userAgent.includes('Opera')) return 'Opera';
+  return 'Unknown';
+}
+
+/**
+ * Extract browser version
+ */
+function getBrowserVersion(): string {
+  const userAgent = navigator.userAgent;
+  const browserName = getBrowserName();
+  
+  let versionMatch;
+  switch (browserName) {
+    case 'Chrome':
+      versionMatch = userAgent.match(/Chrome\/(\d+\.\d+)/);
+      break;
+    case 'Edge':
+      versionMatch = userAgent.match(/Edg\/(\d+\.\d+)/);
+      break;
+    case 'Firefox':
+      versionMatch = userAgent.match(/Firefox\/(\d+\.\d+)/);
+      break;
+    case 'Safari':
+      versionMatch = userAgent.match(/Version\/(\d+\.\d+)/);
+      break;
+    default:
+      versionMatch = null;
+  }
+  
+  return versionMatch ? versionMatch[1] : 'Unknown';
+}
+
+/**
  * Collect browser-specific information for fingerprinting
  */
 function getBrowserInfo(): BrowserInfo {
@@ -38,6 +83,10 @@ function getBrowserInfo(): BrowserInfo {
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown',
     cookieEnabled: navigator.cookieEnabled,
     doNotTrack: navigator.doNotTrack || null,
+    browserName: getBrowserName(),
+    browserVersion: getBrowserVersion(),
+    hardwareConcurrency: navigator.hardwareConcurrency || 0,
+    deviceMemory: (navigator as any).deviceMemory || undefined,
   };
 }
 
@@ -49,6 +98,7 @@ export function generateBrowserFingerprint(): string {
     const browserInfo = getBrowserInfo();
     
     // Create a consistent string from browser characteristics
+    // Include browser name and version for better differentiation
     const fingerprintString = [
       browserInfo.userAgent,
       browserInfo.language,
@@ -56,14 +106,20 @@ export function generateBrowserFingerprint(): string {
       browserInfo.screenResolution,
       browserInfo.timezone,
       browserInfo.cookieEnabled.toString(),
-      browserInfo.doNotTrack || 'null'
+      browserInfo.doNotTrack || 'null',
+      browserInfo.browserName,
+      browserInfo.browserVersion,
+      browserInfo.hardwareConcurrency.toString(),
+      browserInfo.deviceMemory?.toString() || 'unknown'
     ].join('|');
     
-    // Generate hash and add timestamp component for additional uniqueness
+    // Generate hash - remove timestamp component to ensure consistency
     const baseHash = simpleHash(fingerprintString);
-    const sessionComponent = simpleHash(Date.now().toString()).slice(0, 4);
     
-    return `${baseHash}-${sessionComponent}`;
+    // Add a small random component that gets stored persistently
+    const persistentComponent = simpleHash(browserInfo.browserName + browserInfo.browserVersion).slice(0, 4);
+    
+    return `${baseHash}-${persistentComponent}`;
   } catch (error) {
     console.warn('Failed to generate browser fingerprint, using fallback:', error);
     // Fallback fingerprint if browser APIs are not available

@@ -98,7 +98,7 @@ function App() {
       const isNewChat = sessionToUse?.title === 'New Chat' || !sessionToUse;
       const updatedSession: ChatSession = {
         id: sessionId,
-        title: isNewChat ? sessionId : sessionToUse!.title,
+        title: isNewChat ? question.slice(0, 50) + (question.length > 50 ? '...' : '') : sessionToUse!.title,
         messages: [...(sessionToUse?.messages || []), message],
         createdAt: sessionToUse?.createdAt || new Date(),
         updatedAt: new Date(),
