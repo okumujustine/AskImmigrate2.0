@@ -181,3 +181,90 @@ export function getBrowserFingerprintInfo(): BrowserInfo & { fingerprint: string
     fingerprint
   };
 }
+
+/**
+ * Debug functions - accessible from browser console when app is running
+ * Call these from the browser console: window.debugFingerprint()
+ */
+declare global {
+  interface Window {
+    debugFingerprint: () => void;
+    clearAllData: () => void;
+    testBrowserIsolation: () => void;
+  }
+}
+
+// Make debug functions globally available
+if (typeof window !== 'undefined') {
+  window.debugFingerprint = () => {
+    console.log('🔍 Browser Fingerprint Debug');
+    console.log('============================');
+    
+    const info = getBrowserFingerprintInfo();
+    console.table(info);
+    
+    console.log('🔑 Current Fingerprint:', info.fingerprint);
+    console.log('🏪 Stored in localStorage:', localStorage.getItem('askimmigrate_client_id'));
+    
+    // Test if fingerprint is consistent
+    const newFingerprint = generateBrowserFingerprint();
+    console.log('🧪 Newly generated:', newFingerprint);
+    console.log('✅ Consistent:', info.fingerprint.split('-')[0] === newFingerprint.split('-')[0]);
+  };
+
+  window.clearAllData = () => {
+    console.log('🧹 Clearing all AskImmigrate data...');
+    
+    try {
+      localStorage.removeItem('askimmigrate_client_id');
+      localStorage.removeItem('askimmigrate_sessions');
+      
+      // Clear any other related data
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('askimmigrate')) {
+          keysToRemove.push(key);
+        }
+      }
+      
+      keysToRemove.forEach(key => {
+        localStorage.removeItem(key);
+        console.log(`✅ Cleared ${key}`);
+      });
+      
+      console.log('🎉 All data cleared! Refresh the page to start fresh.');
+      
+    } catch (e) {
+      console.error('❌ Failed to clear data:', e);
+    }
+  };
+
+  window.testBrowserIsolation = () => {
+    console.log('🧪 Browser Isolation Test');
+    console.log('=========================');
+    
+    const userAgent = navigator.userAgent;
+    const browserName = userAgent.includes('Edg') ? 'Edge' : 
+                       userAgent.includes('Chrome') ? 'Chrome' : 
+                       userAgent.includes('Firefox') ? 'Firefox' : 'Other';
+    
+    console.log('Current Browser:', browserName);
+    console.log('User Agent:', userAgent);
+    
+    const fingerprint = getPersistentBrowserFingerprint();
+    console.log('Browser Fingerprint:', fingerprint);
+    
+    // Check sessions
+    const sessions = localStorage.getItem('askimmigrate_sessions');
+    const sessionCount = sessions ? JSON.parse(sessions).sessions?.length || 0 : 0;
+    console.log('Session Count:', sessionCount);
+    
+    console.log('');
+    console.log('🔍 To test isolation:');
+    console.log('1. Note this fingerprint:', fingerprint);
+    console.log('2. Open another browser (Chrome/Edge/Firefox)');
+    console.log('3. Run window.testBrowserIsolation() there');
+    console.log('4. Compare fingerprints - they should be different!');
+  };
+}

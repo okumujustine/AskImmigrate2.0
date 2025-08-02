@@ -9,6 +9,9 @@ import { askQuestion, createNewChatSession, getChatSessions } from './services/a
 import { getPersistentBrowserFingerprint } from './services/browserFingerprint';
 import type { ChatSession, User } from './types/chat';
 
+// Import debug functions to make them available
+import './services/browserFingerprint';
+
 function App() {
   // Initialize user with browser fingerprint for anonymous isolation
   const [user] = useState<User>(() => {
