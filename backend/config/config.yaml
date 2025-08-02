@@ -1,4 +1,5 @@
-llm: gpt-4o-mini
+#llm: gpt-4o-mini
+llm: llama3-8b-8192
 
 vectordb:
   provider: "chromadb"

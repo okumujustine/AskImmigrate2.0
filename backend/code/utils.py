@@ -1,9 +1,10 @@
 import os
 import shutil
 import uuid
+import hashlib
 from functools import lru_cache
 from pathlib import Path
-from typing import Iterator, Union
+from typing import Iterator, Union, Optional
 
 import chromadb
 import yaml
@@ -49,13 +50,87 @@ def load_immigration_example(example_number: int) -> str:
         return f.read()
 
 
-def custom_terminal_print(message: str):
+def custom_terminal_print(message: str, verbose: bool = False):
+    """Print messages with optional verbosity control for cleaner output"""
+    # if verbose or os.getenv("ASKIMMIGRATE_VERBOSE", "false").lower() == "true":
     print("." * 10, message, "." * 10)
 
 
 def slugify_chat_session(s):
-    print("---", s);
+    """Legacy function - use create_anonymous_session_id for new code with client isolation"""
     return f"{slugify(s[:20])}-{uuid.uuid4().hex[:8]}"
+
+
+def create_client_fingerprint_hash(client_fingerprint: str) -> str:
+    """
+    Create a short, consistent hash from client fingerprint for session IDs.
+    
+    Args:
+        client_fingerprint: Unique client identifier from browser
+        
+    Returns:
+        8-character hash of the fingerprint
+    """
+    if not client_fingerprint:
+        return "anonymous"
+    
+    # Create consistent hash from fingerprint
+    hash_object = hashlib.md5(client_fingerprint.encode())
+    return hash_object.hexdigest()[:8]
+
+
+def create_anonymous_session_id(client_fingerprint: Optional[str], question: str) -> str:
+    """
+    Create a client-isolated session ID for anonymous users.
+    
+    Args:
+        client_fingerprint: Unique browser fingerprint (None for legacy support)
+        question: User's question text for context
+        
+    Returns:
+        Session ID format: {client_hash}-{question_slug}-{unique_id}
+        Example: "a1b2c3d4-how-do-i-apply-for-h1b-e5f6g7h8"
+    """
+    # Handle legacy case where no client fingerprint provided
+    if not client_fingerprint:
+        return slugify_chat_session(question)
+    
+    # Create client hash for session isolation
+    client_hash = create_client_fingerprint_hash(client_fingerprint)
+    
+    # Create question context (first 20 chars, slugified)
+    question_slug = slugify(question[:20]) if question else "chat"
+    
+    # Add unique component for this session
+    unique_id = uuid.uuid4().hex[:8]
+    
+    return f"{client_hash}-{question_slug}-{unique_id}"
+
+
+def extract_client_from_session_id(session_id: str) -> Optional[str]:
+    """
+    Extract client hash from session ID for filtering.
+    
+    Args:
+        session_id: Session ID potentially containing client hash
+        
+    Returns:
+        Client hash if found, None for legacy sessions
+    """
+    if not session_id:
+        return None
+    
+    parts = session_id.split('-')
+    
+    # New format: client_hash-question_slug-unique_id (at least 3 parts)
+    # Legacy format: question_slug-unique_id (2 parts)
+    if len(parts) >= 3:
+        # First part should be 8-char client hash
+        potential_client_hash = parts[0]
+        if len(potential_client_hash) == 8 and potential_client_hash.isalnum():
+            return potential_client_hash
+    
+    return None  # Legacy session or invalid format
 
 
 def initialize_chroma_db(create_new_folder=False):

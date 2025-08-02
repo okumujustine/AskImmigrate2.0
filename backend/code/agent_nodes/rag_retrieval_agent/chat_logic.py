@@ -12,8 +12,18 @@ from backend.code.utils import get_collection, get_relevant_documents, initializ
 
 
 def respond_to_query(llm: str, prompt: str) -> str:
-    groq = ChatOpenAI(model=llm)
-    return groq.invoke(prompt).content  # type: ignore
+    if llm.startswith("gpt-") or llm in ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "gpt-4-mini"]:
+        from langchain_openai import ChatOpenAI
+        model = ChatOpenAI(model=llm, temperature=0.2)
+    elif llm.startswith("llama3-"):
+        from langchain_groq import ChatGroq
+        model = llm
+        model = ChatGroq(model=llm, temperature=0.2)
+    else:
+        raise ValueError(f"Unknown model name: {llm}")
+    return model.invoke(prompt).content
+
+    
 
 
 def chat(session_id: str, question: str) -> str:
