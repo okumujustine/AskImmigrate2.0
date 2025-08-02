@@ -30,3 +30,5 @@ pygithub~=2.6.1
 langchain_tavily~=0.2.5
 selenium~=4.34.0
 unstructured~=0.18.1
+tavily-python
+langchain-tavily

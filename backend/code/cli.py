@@ -15,6 +15,7 @@ import os
 import sys
 from typing import List, Dict, Any
 from dotenv import load_dotenv
+from tools.web_search_tool import web_search_tool
 
 # Add the project root to Python path
 project_root = os.path.dirname(
