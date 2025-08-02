@@ -20,15 +20,15 @@ import time
 from pathlib import Path
 from typing import Dict, List, Any
 
-# Add project root to path
-project_root = Path(__file__).parent
-sys.path.insert(0, str(project_root))
+# Add backend code directory to path
+backend_code_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(backend_code_dir))
 
 class TestRunner:
     """Comprehensive test runner for Hillary's responsibilities."""
     
     def __init__(self):
-        self.project_root = project_root
+        self.project_root = backend_code_dir
         self.test_results = {}
         self.start_time = time.time()
         

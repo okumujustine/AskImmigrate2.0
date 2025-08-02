@@ -11,13 +11,20 @@ Tests cover:
 5. Edge cases and error handling
 """
 
+import os
+import sys
 import pytest
 from unittest.mock import patch, Mock
+
+# Add the backend code directory to Python path
+backend_code_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if backend_code_dir not in sys.path:
+    sys.path.insert(0, backend_code_dir)
 import time
 from typing import List, Dict
 
 # Import our validation module
-from backend.code.input_validation import (
+from input_validation import (
     InputValidator, 
     ValidationResult,
     RateLimiter,

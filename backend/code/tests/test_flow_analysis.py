@@ -10,15 +10,15 @@ import sys
 import os
 from datetime import datetime
 
-# Add the project root to Python path
-project_root = os.path.dirname(os.path.abspath(__file__))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+# Add the backend code directory to Python path
+backend_code_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if backend_code_dir not in sys.path:
+    sys.path.insert(0, backend_code_dir)
 
 # Import the core components
-from backend.code.agentic_state import ImmigrationState, ConversationTurn, SessionContext
-from backend.code.session_manager import session_manager
-from backend.code.graph_workflow import create_initial_state, run_agentic_askimmigrate
+from agentic_state import ImmigrationState, ConversationTurn, SessionContext
+from session_manager import session_manager
+from graph_workflow import create_initial_state, run_agentic_askimmigrate
 
 def print_separator(title):
     """Print a nice separator for readability"""
