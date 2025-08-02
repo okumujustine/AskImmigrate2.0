@@ -4,7 +4,10 @@
       "WebFetch(domain:app.readytensor.ai)",
       "WebFetch(domain:app.readytensor.ai)",
       "WebFetch(domain:app.readytensor.ai)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(rm:*)"
     ],
     "deny": []
   }

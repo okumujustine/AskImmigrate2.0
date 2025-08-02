@@ -17,7 +17,7 @@ from datetime import datetime
 load_dotenv()
 if os.environ.get("LANGSMITH_TRACING") != "true":
     workflow_logger.warning("langsmith_tracing_disabled", 
-                           message="LangSmith tracing is not enabled. Set LANGSMITH_TRACING=true in your environment.")
+                           details="LangSmith tracing is not enabled. Set LANGSMITH_TRACING=true in your environment.")
 
 def create_ask_immigrate_graph() -> CompiledStateGraph:
     """
@@ -203,7 +203,7 @@ def create_initial_state(text: str, session_id: Optional[str] = None) -> Immigra
             workflow_logger.info(
                 "new_session_detected",
                 session_id=actual_session_id,
-                message="No conversation history found - treating as new session"
+                details="No conversation history found - treating as new session"
             )
             state["session_context"] = SessionContext()
             state["is_followup_question"] = False
@@ -235,7 +235,7 @@ def create_initial_state(text: str, session_id: Optional[str] = None) -> Immigra
         workflow_logger.error(
             "initial_state_creation_critical_failure",
             session_id=actual_session_id,
-            message="State is None, creating emergency fallback"
+            details="State is None, creating emergency fallback"
         )
         state = ImmigrationState(
             text=text,
@@ -333,7 +333,7 @@ def visualize_graph(graph: StateGraph, save_path: str = OUTPUTS_DIR):
             "graph_visualization_failed",
             error_type=type(e).__name__,
             error_message=str(e),
-            message="Graph structure is still functional, just visualization failed"
+            details="Graph structure is still functional, just visualization failed"
         )
 
 def run_agentic_askimmigrate(text: str, session_id: Optional[str] = None) -> Dict[str, Any]:

@@ -31,11 +31,11 @@ def get_tools_by_agent(agent_name: str) -> List[BaseTool]:
         List of tools available to the agent
     """
     tool_mapping = {
-        "manager": [rag_retrieval_tool], # Manager analyzes with RAG
+        "manager": get_all_tools(), # Manager orchestrates so needs ALL tools for informed decisions
         "synthesis": [rag_retrieval_tool, web_search_tool, fee_calculator_tool], #full tools for synthesis
-        "reviewer": [fee_calculator_tool, web_search_tool, fee_calculator_tool] # Reviewer needs all tools to validate
+        "reviewer": [fee_calculator_tool, web_search_tool] # Reviewer needs tools to validate
     }
     
     tools = tool_mapping.get(agent_name, [])
-    print(f"🔧 Agent '{agent_name}' has access to {len(tools)} tools: {[t.name for t in tools]}")
+    print(f"Agent '{agent_name}' has access to {len(tools)} tools: {[t.name for t in tools]}")
     return tools

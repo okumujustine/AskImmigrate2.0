@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional
 from contextvars import ContextVar
 import os
 
-from paths import OUTPUTS_DIR
+from backend.code.paths import OUTPUTS_DIR
 
 # Context variable for correlation ID tracking across agents
 correlation_id_context: ContextVar[str] = ContextVar('correlation_id', default='')
