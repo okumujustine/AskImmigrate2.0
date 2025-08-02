@@ -7,6 +7,7 @@ config = load_config(APP_CONFIG_FPATH)
 prompt_config = load_config(PROMPT_CONFIG_FPATH)
 from backend.code.agentic_state import ImmigrationState, ReviewOutput
 from backend.code.llm import get_llm
+from backend.code.structured_logging import reviewer_logger, PerformanceTimer
 
 
 def reviewer_node(state: ImmigrationState) -> Dict[str, Any]:
@@ -16,8 +17,14 @@ def reviewer_node(state: ImmigrationState) -> Dict[str, Any]:
     # Track revision rounds
     revision_round = state.get("revision_round", 0) + 1
     max_revisions = 2  # Limit to prevent infinite loops
+    session_id = state.get("session_id", "")
 
-    print(f"🔍 Reviewer: Evaluating processing results (Round {revision_round})")
+    reviewer_logger.info(
+        "reviewer_evaluation_started",
+        session_id=session_id,
+        revision_round=revision_round,
+        max_revisions=max_revisions
+    )
 
     llm = get_llm(config.get("llm", "gpt-4o-mini")).with_structured_output(ReviewOutput)
 
@@ -38,7 +45,8 @@ def reviewer_node(state: ImmigrationState) -> Dict[str, Any]:
     )
 
     try:
-        response = llm.invoke(prompt)
+        with PerformanceTimer(reviewer_logger, "llm_review", session_id=session_id):
+            response = llm.invoke(prompt)
 
         # Handle individual component approvals
         overall_approved = (
@@ -49,6 +57,12 @@ def reviewer_node(state: ImmigrationState) -> Dict[str, Any]:
 
         # Force approval if we've reached max revisions to prevent infinite loops
         if revision_round >= max_revisions and not overall_approved:
+            reviewer_logger.warning(
+                "max_revisions_reached_forcing_approval",
+                session_id=session_id,
+                revision_round=revision_round,
+                max_revisions=max_revisions
+            )
             overall_approved = True  # Force approve all remaining components
             response.rag_retriever_approved = True
             response.synthesis_approved = True
@@ -56,18 +70,15 @@ def reviewer_node(state: ImmigrationState) -> Dict[str, Any]:
 
         status = "approved" if overall_approved else "needs_revision"
 
-        print()
-
-        print(f"✅ Review completed: {status}")
-        print(f"📋 Feedback: {response.model_dump()}")
-
-        # Show individual component status
-        components_status = [
-            f"RAG: {'✅' if response.rag_retriever_approved else '❌'}",
-            f"Synthesis: {'✅' if response.synthesis_approved else '❌'}",
-            f"References: {'✅' if response.references_approved else '❌'}",
-        ]
-        print(f"📊 Component Status: {' | '.join(components_status)}")
+        reviewer_logger.info(
+            "review_completed",
+            session_id=session_id,
+            status=status,
+            revision_round=revision_round,
+            rag_approved=response.rag_retriever_approved,
+            synthesis_approved=response.synthesis_approved,
+            references_approved=response.references_approved
+        )
 
         if not overall_approved:
             needs_revision_list = []
@@ -78,7 +89,12 @@ def reviewer_node(state: ImmigrationState) -> Dict[str, Any]:
             if not response.references_approved:
                 needs_revision_list.append("References")
 
-            print(f"🔄 Components needing revision: {', '.join(needs_revision_list)}")
+            reviewer_logger.info(
+                "components_need_revision",
+                session_id=session_id,
+                revision_round=revision_round,
+                components_needing_revision=needs_revision_list
+            )
 
             return {
                 "needs_revision": True,
@@ -91,7 +107,11 @@ def reviewer_node(state: ImmigrationState) -> Dict[str, Any]:
                 "references_approved": response.references_approved,
             }
         else:
-            print("✅ All components approved - proceeding to final output")
+            reviewer_logger.info(
+                "all_components_approved",
+                session_id=session_id,
+                revision_round=revision_round
+            )
 
             return {
                 "needs_revision": False,
@@ -104,7 +124,13 @@ def reviewer_node(state: ImmigrationState) -> Dict[str, Any]:
                 "references_approved": response.references_approved,
             }
     except Exception as e:
-        print(f"❌ Review failed: {e}")
+        reviewer_logger.error(
+            "review_process_failed",
+            session_id=session_id,
+            revision_round=revision_round,
+            error_type=type(e).__name__,
+            error_message=str(e)
+        )
         return {
             "review_feedback": "Review process failed.",
             "final_output": {},
@@ -122,13 +148,20 @@ def route_from_reviewer(
     rag_retriever_approved = state.get("rag_retriever_approved", False)
     synthesis_approved = state.get("synthesis_approved", False)
     references_approved = state.get("references_approved", False)
+    session_id = state.get("session_id", "")
 
     if not needs_revision:
-        print("✅ All components approved - routing to END")
+        reviewer_logger.info("routing_to_end", session_id=session_id)
         return "end"
     else:
-        print("🔄 Some components need revision")
+        reviewer_logger.info(
+            "routing_to_revision",
+            session_id=session_id,
+            rag_approved=rag_retriever_approved,
+            synthesis_approved=synthesis_approved,
+            references_approved=references_approved
+        )
         # In the simplified architecture, all revisions go through synthesis
         # which will use appropriate tools (RAG, web search, fee calculator)
-        print("🔄 Routing to synthesis for revision (will use appropriate tools)")
+        reviewer_logger.info("routing_to_synthesis_for_revision", session_id=session_id)
         return "synthesis"

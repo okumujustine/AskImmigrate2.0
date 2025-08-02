@@ -5,6 +5,10 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from backend.code.agentic_state import ConversationTurn, SessionContext, ImmigrationState
 from backend.code.paths import OUTPUTS_DIR
+from backend.code.structured_logging import get_logger, PerformanceTimer, start_request_tracking
+
+# Create session manager specific logger
+session_logger = get_logger("session_manager")
 
 SESSIONS_DB_PATH = os.path.join(OUTPUTS_DIR, "agentic_sessions.db")
 
@@ -23,7 +27,7 @@ class SessionManager:
     def __init__(self, db_path: str = SESSIONS_DB_PATH):
         self.db_path = db_path
         self._init_database()
-        print(f"📱 SessionManager initialized with database: {db_path}")
+        session_logger.info("session_manager_initialized", db_path=db_path)
     
     def _sanitize_session_id(self, session_id: str) -> str:
         """
@@ -39,7 +43,11 @@ class SessionManager:
         
         # Log if we had to clean it
         if cleaned != session_id:
-            print(f"🔧 SessionManager: Cleaned session ID '{session_id}' -> '{cleaned}'")
+            session_logger.info(
+                "session_id_sanitized",
+                original_session_id=session_id,
+                cleaned_session_id=cleaned
+            )
         
         return cleaned
     
@@ -54,16 +62,17 @@ class SessionManager:
         """
         try:
             os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-            print(f"📁 SessionManager: Database directory ensured: {os.path.dirname(self.db_path)}")
+            session_logger.info("database_directory_ensured", db_dir=os.path.dirname(self.db_path))
             
-            with sqlite3.connect(self.db_path) as conn:
-                # Create sessions table
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS sessions (
-                        session_id TEXT PRIMARY KEY,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        turn_count INTEGER DEFAULT 0,
+            with PerformanceTimer(session_logger, "database_initialization"):
+                with sqlite3.connect(self.db_path) as conn:
+                    # Create sessions table
+                    conn.execute("""
+                        CREATE TABLE IF NOT EXISTS sessions (
+                            session_id TEXT PRIMARY KEY,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            turn_count INTEGER DEFAULT 0,
                         session_context TEXT  -- JSON serialized SessionContext
                     )
                 """)
@@ -102,10 +111,14 @@ class SessionManager:
                 if missing_tables:
                     raise Exception(f"Failed to create tables: {missing_tables}")
                 
-                print(f"✅ SessionManager: Database initialized with tables: {tables}")
+                session_logger.info("database_initialized_successfully", tables=tables)
                 
         except Exception as e:
-            print(f"❌ SessionManager: Database initialization failed: {e}")
+            session_logger.error(
+                "database_initialization_failed",
+                error_type=type(e).__name__,
+                error_message=str(e)
+            )
             raise
     
     def get_or_create_session(self, session_id: str = None) -> Dict[str, Any]:
@@ -127,64 +140,71 @@ class SessionManager:
             from backend.code.utils import slugify_chat_session
             import uuid
             session_id = f"session-{uuid.uuid4().hex[:8]}"
-            print(f"📱 SessionManager: Generated new session ID: {session_id}")
+            session_logger.info("new_session_id_generated", session_id=session_id)
         
-        print(f"📱 SessionManager: Getting or creating session: '{session_id}'")
+        session_logger.info("getting_or_creating_session", session_id=session_id)
         
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.row_factory = sqlite3.Row
-                
-                # Check if session exists with debugging
-                print(f"🔍 SessionManager: Querying for session: '{session_id}'")
-                session = conn.execute(
-                    "SELECT * FROM sessions WHERE session_id = ?", 
-                    (session_id,)
-                ).fetchone()
-                
-                if session:
-                    print(f"✅ SessionManager: Found existing session: {session_id}")
-                    session_data = {
-                        "session_id": session["session_id"],
-                        "created_at": session["created_at"],
-                        "updated_at": session["updated_at"],
-                        "turn_count": session["turn_count"],
-                        "session_context": json.loads(session["session_context"]) if session["session_context"] else {}
-                    }
-                    print(f"📊 SessionManager: Session has {session_data['turn_count']} turns")
-                    return session_data
-                else:
-                    print(f"📱 SessionManager: Session not found, creating new: {session_id}")
+            with PerformanceTimer(session_logger, "session_retrieval", session_id=session_id):
+                with sqlite3.connect(self.db_path) as conn:
+                    conn.row_factory = sqlite3.Row
                     
-                    # Create new session
-                    conn.execute(
-                        """INSERT INTO sessions (session_id, session_context) 
-                           VALUES (?, ?)""",
-                        (session_id, json.dumps({}))
-                    )
-                    
-                    # Verify creation
-                    created_session = conn.execute(
+                    # Check if session exists with debugging
+                    session_logger.info("querying_for_session", session_id=session_id)
+                    session = conn.execute(
                         "SELECT * FROM sessions WHERE session_id = ?", 
                         (session_id,)
                     ).fetchone()
                     
-                    if not created_session:
-                        raise Exception(f"Failed to create session: {session_id}")
-                    
-                    print(f"✅ SessionManager: Created new session: {session_id}")
-                    return {
-                        "session_id": session_id,
-                        "created_at": datetime.now().isoformat(),
-                        "updated_at": datetime.now().isoformat(),
-                        "turn_count": 0,
-                        "session_context": {}
-                    }
+                    if session:
+                        session_logger.info("existing_session_found", session_id=session_id)
+                        session_data = {
+                            "session_id": session["session_id"],
+                            "created_at": session["created_at"],
+                            "updated_at": session["updated_at"],
+                            "turn_count": session["turn_count"],
+                            "session_context": json.loads(session["session_context"]) if session["session_context"] else {}
+                        }
+                        session_logger.info("session_data_retrieved", 
+                                          session_id=session_id, 
+                                          turn_count=session_data['turn_count'])
+                        return session_data
+                    else:
+                        session_logger.info("session_not_found_creating_new", session_id=session_id)
+                        
+                        # Create new session
+                        conn.execute(
+                            """INSERT INTO sessions (session_id, session_context) 
+                               VALUES (?, ?)""",
+                            (session_id, json.dumps({}))
+                        )
+                        
+                        # Verify creation
+                        created_session = conn.execute(
+                            "SELECT * FROM sessions WHERE session_id = ?", 
+                            (session_id,)
+                        ).fetchone()
+                        
+                        if not created_session:
+                            raise Exception(f"Failed to create session: {session_id}")
+                        
+                        session_logger.info("new_session_created", session_id=session_id)
+                        return {
+                            "session_id": session_id,
+                            "created_at": datetime.now().isoformat(),
+                            "updated_at": datetime.now().isoformat(),
+                            "turn_count": 0,
+                            "session_context": {}
+                        }
                     
         except Exception as e:
-            print(f"❌ SessionManager: Error in get_or_create_session: {e}")
-            print(f"   Session ID: '{session_id}'")
-            print(f"   Database path: {self.db_path}")
+            session_logger.error(
+                "session_get_create_failed",
+                session_id=session_id,
+                error_type=type(e).__name__,
+                error_message=str(e),
+                db_path=self.db_path
+            )
             raise
     
     def load_conversation_history(self, session_id: str, limit: int = 10) -> List[ConversationTurn]:
@@ -199,49 +219,64 @@ class SessionManager:
         """
         
         session_id = self._sanitize_session_id(session_id)
-        print(f"📚 SessionManager: Loading conversation history for: '{session_id}' (limit: {limit})")
+        session_logger.info("loading_conversation_history", 
+                          session_id=session_id, 
+                          limit=limit)
         
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.row_factory = sqlite3.Row
-                
-                # Query with debugging
-                rows = conn.execute("""
-                    SELECT * FROM conversation_turns 
-                    WHERE session_id = ? 
-                    ORDER BY turn_number ASC 
-                    LIMIT ?
-                """, (session_id, limit)).fetchall()
-                
-                print(f"📊 SessionManager: Found {len(rows)} conversation turns")
-                
-                if len(rows) == 0:
-                    print(f"📭 SessionManager: No conversation history found for session: {session_id}")
-                    return []
-                
-                turns = []
-                for i, row in enumerate(rows):
-                    try:
-                        turn = ConversationTurn(
-                            question=row["question"],
-                            answer=row["answer"],
-                            timestamp=row["timestamp"],
-                            question_type=row["question_type"],
-                            visa_focus=json.loads(row["visa_focus"]) if row["visa_focus"] else None,
-                            tools_used=json.loads(row["tools_used"]) if row["tools_used"] else None
-                        )
-                        turns.append(turn)
-                        print(f"✅ SessionManager: Loaded turn {i+1}: {turn.question[:50]}...")
-                    except Exception as e:
-                        print(f"❌ SessionManager: Error loading turn {i+1}: {e}")
-                        continue
-                
-                print(f"📚 SessionManager: Successfully loaded {len(turns)} turns")
-                return turns
+            with PerformanceTimer(session_logger, "conversation_history_load", session_id=session_id):
+                with sqlite3.connect(self.db_path) as conn:
+                    conn.row_factory = sqlite3.Row
+                    
+                    # Query with debugging
+                    rows = conn.execute("""
+                        SELECT * FROM conversation_turns 
+                        WHERE session_id = ? 
+                        ORDER BY turn_number ASC 
+                        LIMIT ?
+                    """, (session_id, limit)).fetchall()
+                    
+                    session_logger.info("conversation_turns_found", 
+                                      session_id=session_id, 
+                                      turn_count=len(rows))
+                    
+                    if len(rows) == 0:
+                        session_logger.info("no_conversation_history_found", session_id=session_id)
+                        return []
+                    
+                    turns = []
+                    for i, row in enumerate(rows):
+                        try:
+                            turn = ConversationTurn(
+                                question=row["question"],
+                                answer=row["answer"],
+                                timestamp=row["timestamp"],
+                                question_type=row["question_type"],
+                                visa_focus=json.loads(row["visa_focus"]) if row["visa_focus"] else None,
+                                tools_used=json.loads(row["tools_used"]) if row["tools_used"] else None
+                            )
+                            turns.append(turn)
+                            session_logger.debug("conversation_turn_loaded", 
+                                               session_id=session_id,
+                                               turn_number=i+1,
+                                               question_preview=turn.question[:50])
+                        except Exception as e:
+                            session_logger.error("conversation_turn_load_failed",
+                                                session_id=session_id,
+                                                turn_number=i+1,
+                                                error_message=str(e))
+                            continue
+                    
+                    session_logger.info("conversation_history_loaded_successfully", 
+                                       session_id=session_id, 
+                                       turns_loaded=len(turns))
+                    return turns
                 
         except Exception as e:
-            print(f"❌ SessionManager: Error loading conversation history: {e}")
-            print(f"   Session ID: '{session_id}'")
+            session_logger.error("conversation_history_load_failed",
+                                session_id=session_id,
+                                error_type=type(e).__name__,
+                                error_message=str(e))
             return []
     
     def save_conversation_turn(self, session_id: str, turn: ConversationTurn, 
@@ -256,22 +291,31 @@ class SessionManager:
         - Transaction rollback on failure
         """
         
+        correlation_id = start_request_tracking()
         session_id = self._sanitize_session_id(session_id)
-        print(f"💾 SessionManager: Saving conversation turn to session: '{session_id}'")
+        session_logger.info("saving_conversation_turn", session_id=session_id, 
+                          correlation_id=correlation_id)
         
         # Validate input data
         if not turn.question or not turn.answer:
-            print(f"❌ SessionManager: Invalid turn data - Question: {bool(turn.question)}, Answer: {bool(turn.answer)}")
+            session_logger.error("invalid_turn_data", 
+                               session_id=session_id,
+                               has_question=bool(turn.question),
+                               has_answer=bool(turn.answer))
             return
         
         if len(turn.answer.strip()) < 10:
-            print(f"❌ SessionManager: Answer too short: '{turn.answer[:50]}...'")
+            session_logger.error("answer_too_short", 
+                               session_id=session_id,
+                               answer_length=len(turn.answer.strip()),
+                               answer_preview=turn.answer[:50])
             return
         
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                # Start transaction
-                conn.execute("BEGIN")
+            with PerformanceTimer(session_logger, "conversation_turn_save", session_id=session_id):
+                with sqlite3.connect(self.db_path) as conn:
+                    # Start transaction
+                    conn.execute("BEGIN")
                 
                 try:
                     # Get current turn count with validation
@@ -281,7 +325,7 @@ class SessionManager:
                     ).fetchone()
                     
                     if not current_session:
-                        print(f"❌ SessionManager: Session not found: {session_id}")
+                        session_logger.error("session_not_found_during_save", session_id=session_id)
                         # Try to create the session
                         conn.execute(
                             """INSERT INTO sessions (session_id, session_context, turn_count) 
@@ -292,7 +336,7 @@ class SessionManager:
                     else:
                         new_turn_number = current_session[0] + 1
                     
-                    print(f"💾 SessionManager: Saving as turn #{new_turn_number}")
+                    session_logger.info("saving_turn", session_id=session_id, turn_number=new_turn_number)
                     
                     # Insert conversation turn
                     conn.execute("""
@@ -330,7 +374,9 @@ class SessionManager:
                     # Commit transaction
                     conn.execute("COMMIT")
                     
-                    print(f"✅ SessionManager: Successfully saved turn #{new_turn_number} to session {session_id}")
+                    session_logger.info("conversation_turn_saved_successfully", 
+                                       session_id=session_id, 
+                                       turn_number=new_turn_number)
                     
                     # Verify the save
                     verify = conn.execute(
@@ -339,21 +385,40 @@ class SessionManager:
                     ).fetchone()
                     
                     if verify and verify[0] == new_turn_number:
-                        print(f"✅ SessionManager: Verified session now has {verify[0]} turns")
+                        session_logger.info("Session turn count verified", extra={
+                            "event": "session_turn_count_verified",
+                            "session_id": session_id,
+                            "verified_turn_count": verify[0],
+                            "correlation_id": correlation_id
+                        })
                     else:
-                        print(f"⚠️ SessionManager: Turn count verification failed")
+                        session_logger.warning("Turn count verification failed", extra={
+                            "event": "turn_count_verification_failed",
+                            "session_id": session_id,
+                            "expected_count": new_turn_number,
+                            "actual_count": verify[0] if verify else None,
+                            "correlation_id": correlation_id
+                        })
                         
                 except Exception as e:
                     conn.execute("ROLLBACK")
                     raise e
                     
         except Exception as e:
-            print(f"❌ SessionManager: Failed to save conversation turn: {e}")
-            print(f"   Session ID: '{session_id}'")
-            print(f"   Question: '{turn.question[:50]}...'")
-            print(f"   Answer length: {len(turn.answer)}")
+            session_logger.error("conversation_turn_save_failed",
+                                session_id=session_id,
+                                error_type=type(e).__name__,
+                                error_message=str(e),
+                                question_preview=turn.question[:50],
+                                answer_length=len(turn.answer),
+                                correlation_id=correlation_id)
             import traceback
-            traceback.print_exc()
+            session_logger.error("conversation_turn_save_traceback", extra={
+                "event": "conversation_turn_save_traceback",
+                "session_id": session_id,
+                "traceback": traceback.format_exc(),
+                "correlation_id": correlation_id
+            })
     
     def _update_session_context(self, session_id: str, final_state: ImmigrationState, 
                                conn: sqlite3.Connection = None) -> Dict[str, Any]:
@@ -366,7 +431,12 @@ class SessionManager:
         - More robust context building
         """
         
-        print(f"🔄 SessionManager: Updating session context for: {session_id}")
+        correlation_id = start_request_tracking()
+        session_logger.info("Session context update started", extra={
+            "event": "session_context_update_started",
+            "session_id": session_id,
+            "correlation_id": correlation_id
+        })
         
         try:
             # Load current context
@@ -387,7 +457,11 @@ class SessionManager:
                 try:
                     context_data = json.loads(current_context[0])
                 except json.JSONDecodeError:
-                    print(f"⚠️ SessionManager: Invalid JSON in session context, resetting")
+                    session_logger.warning("Invalid JSON in session context", extra={
+                        "event": "invalid_session_context_json",
+                        "session_id": session_id,
+                        "correlation_id": correlation_id
+                    })
                     context_data = {}
             
             # Update context with new information
@@ -418,11 +492,23 @@ class SessionManager:
                 "last_complexity": final_state.get("complexity")
             }
             
-            print(f"🔄 SessionManager: Context updated - Topics: {ongoing_topics}, Visas: {visa_types_mentioned}")
+            session_logger.info("Session context updated successfully", extra={
+                "event": "session_context_updated",
+                "session_id": session_id,
+                "ongoing_topics": ongoing_topics,
+                "visa_types_mentioned": visa_types_mentioned,
+                "correlation_id": correlation_id
+            })
             return updated_context
             
         except Exception as e:
-            print(f"❌ SessionManager: Error updating session context: {e}")
+            session_logger.error("Session context update failed", extra={
+                "event": "session_context_update_error",
+                "session_id": session_id,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "correlation_id": correlation_id
+            })
             return {"ongoing_topics": [], "visa_types_mentioned": []}
     
     def build_session_context_string(self, session_id: str) -> str:
@@ -460,22 +546,41 @@ class SessionManager:
             return "\n".join(context_parts)
             
         except Exception as e:
-            print(f"❌ SessionManager: Error building context string: {e}")
+            correlation_id = start_request_tracking()
+            session_logger.error("Error building context string", extra={
+                "event": "context_string_build_error",
+                "session_id": session_id,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "correlation_id": correlation_id
+            })
             return ""
     
     def detect_followup_question(self, current_question: str, session_context: Dict[str, Any]) -> bool:
         """Enhanced follow-up question detection with better precision."""
         
         # Strong follow-up indicators
+        # Expanded strong follow-up indicators for better detection
         strong_followup_indicators = [
-            "it", "that", "this", "what about", "can i also",
-            "and what", "follow up", "additionally", "furthermore", 
-            "next step", "after that", "my first", "previous", "earlier", 
-            "before", "what did i", "what was", "tell me more"
+            "it", "that", "this", "what about", "can i also", "and what", "follow up",
+            "additionally", "furthermore", "next step", "after that", "my first", "previous",
+            "earlier", "before", "what did i", "what was", "tell me more", "more details",
+            "can you elaborate", "could you clarify", "expand on", "continue", "go on",
+            "what happened next", "what else", "also", "besides", "in addition", "related to",
+            "regarding that", "regarding this", "about that", "about this", "as mentioned",
+            "as discussed", "as you said", "as you mentioned", "as stated", "as explained"
         ]
         
         # Session reference indicators (very strong)
-        session_references = ["first", "previous", "earlier", "what did i", "what was", "before", "last"]
+        # Expanded session reference indicators for better follow-up detection
+        session_references = [
+            "first", "previous", "earlier", "what did i", "what was", "before", "last",
+            "my last question", "my previous question", "the last answer", "the previous answer",
+            "the last one", "the previous one", "the earlier one", "the earlier question",
+            "the earlier answer", "the answer you gave", "the question before", "the answer before",
+            "the one before", "the one you just answered", "the one you just gave", "the last response",
+            "the previous response", "the earlier response"
+        ]
         
         question_lower = current_question.lower()
         
@@ -487,7 +592,13 @@ class SessionManager:
         
         # Check question length and immigration terms
         is_short_question = len(current_question.split()) < 6  # More restrictive
-        immigration_terms = ["visa", "green card", "citizenship", "naturalization", "h1b", "f1", "opt", "uscis", "immigration"]
+        # Expanded immigration-related terms for better detection
+        immigration_terms = [
+            "visa", "green card", "citizenship", "naturalization", "h1b", "f1", "opt", "uscis", "immigration",
+            "permanent resident", "work permit", "asylum", "refugee", "i-140", "i-485", "i-20", "ds-160",
+            "eb-1", "eb-2", "eb-3", "l1", "j1", "b2", "e2", "o1", "tn", "daca", "advance parole", "us consulate",
+            "petition", "sponsor", "interview", "status", "application", "case number", "priority date"
+        ]
         has_immigration_terms = any(term in question_lower for term in immigration_terms)
         
         # IMPROVED LOGIC: More precise detection
@@ -508,12 +619,18 @@ class SessionManager:
             is_followup = False
             reason = "appears to be new question"
         
-        print(f"🔗 SessionManager: Follow-up detection for '{current_question[:30]}...': {is_followup}")
-        print(f"   • Has session references: {has_session_references}")
-        print(f"   • Has strong follow-up words: {has_strong_followup_words}")
-        print(f"   • Is very short question: {is_short_question and len(current_question.split()) <= 3}")
-        print(f"   • Has immigration terms: {has_immigration_terms}")
-        print(f"   • Reason: {reason}")
+        correlation_id = start_request_tracking()
+        session_logger.info("Follow-up question detection completed", extra={
+            "event": "followup_detection_completed",
+            "question_preview": current_question[:30],
+            "is_followup": is_followup,
+            "has_session_references": has_session_references,
+            "has_strong_followup_words": has_strong_followup_words,
+            "is_short_question": is_short_question and len(current_question.split()) <= 3,
+            "has_immigration_terms": has_immigration_terms,
+            "detection_reason": reason,
+            "correlation_id": correlation_id
+        })
         
         return is_followup
     
@@ -531,7 +648,13 @@ class SessionManager:
                 
                 return [dict(session) for session in sessions]
         except Exception as e:
-            print(f"❌ SessionManager: Error listing sessions: {e}")
+            correlation_id = start_request_tracking()
+            session_logger.error("Error listing sessions", extra={
+                "event": "session_listing_error",
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "correlation_id": correlation_id
+            })
             return []
 
     def get_unique_session_ids(self) -> List[str]:
@@ -544,7 +667,13 @@ class SessionManager:
                 session_ids = [row[0] for row in cursor.fetchall()]
                 return session_ids
         except Exception as e:
-            print(f"❌ SessionManager: Error retrieving unique session IDs: {e}")
+            correlation_id = start_request_tracking()
+            session_logger.error("Error retrieving unique session IDs", extra={
+                "event": "unique_session_ids_error",
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "correlation_id": correlation_id
+            })
             return []
 
     from typing import List, Dict, Any
@@ -573,7 +702,14 @@ class SessionManager:
                 rows = cursor.fetchall()  # all rows
                 return [dict(r) for r in rows]  # list[dict]
         except sqlite3.Error as e:  # narrow the catch
-            print(f"❌ SessionManager: DB error for {session_id}: {e}")
+            correlation_id = start_request_tracking()
+            session_logger.error("Database error getting answers by session", extra={
+                "event": "get_answers_db_error",
+                "session_id": session_id,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "correlation_id": correlation_id
+            })
             return []
 
     def get_last_answer_by_session(self, session_id: str) -> Optional[str]:
@@ -589,7 +725,14 @@ class SessionManager:
                 ).fetchone()
                 return row['answer'] if row else None
         except Exception as e:
-            print(f"❌ SessionManager: Error retrieving last answer for {session_id}: {e}")
+            correlation_id = start_request_tracking()
+            session_logger.error("Error retrieving last answer", extra={
+                "event": "get_last_answer_error",
+                "session_id": session_id,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "correlation_id": correlation_id
+            })
             return None
     
 # Global session manager instance

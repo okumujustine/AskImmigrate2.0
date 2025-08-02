@@ -25,6 +25,9 @@ if project_root not in sys.path:
 
 load_dotenv()
 
+# Import structured logging
+from backend.code.structured_logging import cli_logger, start_request_tracking
+
 # To avoid tokenizer parallelism warning from huggingface
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -36,20 +39,35 @@ def sanitize_session_id(session_id: str) -> str:
     """
     if not session_id:
         return session_id
-    
+
+    correlation_id = start_request_tracking()
+    cli_logger.info("Session ID sanitization started", extra={
+        "event": "session_id_sanitization_started",
+        "original_session_id": session_id,
+        "correlation_id": correlation_id
+    })
+
     # Remove leading/trailing whitespace
     cleaned = session_id.strip()
-    
+
     # Remove quotes if present
     if cleaned.startswith('"') and cleaned.endswith('"'):
         cleaned = cleaned[1:-1]
     if cleaned.startswith("'") and cleaned.endswith("'"):
         cleaned = cleaned[1:-1]
-    
+
     # Remove extra spaces
     cleaned = ' '.join(cleaned.split())
     
+    cli_logger.info("Session ID sanitized successfully", extra={
+        "event": "session_id_sanitized",
+        "original_session_id": session_id,
+        "sanitized_session_id": cleaned,
+        "correlation_id": correlation_id
+    })
+    
     return cleaned
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -91,7 +109,13 @@ def main():
     if args.session_id:
         session_id = sanitize_session_id(args.session_id)
         if session_id != args.session_id:
-            print(f"🔧 Cleaned session ID: '{args.session_id}' -> '{session_id}'")
+            correlation_id = start_request_tracking()
+            cli_logger.info("Session ID cleaned", extra={
+                "event": "session_id_cleaned",
+                "original_session_id": args.session_id,
+                "cleaned_session_id": session_id,
+                "correlation_id": correlation_id
+            })
     
     # Check if question is required
     if not args.list_sessions and not args.test and not args.question:
@@ -104,30 +128,77 @@ def main():
                 # List agentic workflow sessions
                 from backend.code.graph_workflow import list_sessions
                 sessions = list_sessions()
-                print("📝 Agentic Workflow Sessions:")
+                
+                correlation_id = start_request_tracking()
+                cli_logger.info("Listing agentic workflow sessions", extra={
+                    "event": "agentic_sessions_list_started",
+                    "session_count": len(sessions),
+                    "correlation_id": correlation_id
+                })
+                
                 if sessions:
                     for session in sessions:
-                        print(f"  • {session['session_id']}: {session['turn_count']} turns, last active {session['updated_at']}")
+                        cli_logger.info("Agentic session found", extra={
+                            "event": "agentic_session_listed",
+                            "session_id": session['session_id'],
+                            "turn_count": session['turn_count'],
+                            "last_active": session['updated_at'],
+                            "correlation_id": correlation_id
+                        })
                 else:
-                    print("  No agentic sessions found")
+                    cli_logger.info("No agentic sessions found", extra={
+                        "event": "no_agentic_sessions_found",
+                        "correlation_id": correlation_id
+                    })
             else:
                 # List RAG workflow sessions
                 from backend.code.agent_nodes.rag_retrieval_agent.memory import list_sessions
                 sessions = list_sessions()
-                print("📝 RAG Workflow Sessions:")
+                
+                correlation_id = start_request_tracking()
+                cli_logger.info("Listing RAG workflow sessions", extra={
+                    "event": "rag_sessions_list_started",
+                    "session_count": len(sessions),
+                    "correlation_id": correlation_id
+                })
+                
                 for sid in sessions:
-                    print(f"  - {sid}")
+                    cli_logger.info("RAG session found", extra={
+                        "event": "rag_session_listed",
+                        "session_id": sid,
+                        "correlation_id": correlation_id
+                    })
         except Exception as e:
-            print(f"❌ Error listing sessions: {e}")
+            correlation_id = start_request_tracking()
+            cli_logger.error("Error listing sessions", extra={
+                "event": "session_listing_error",
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "correlation_id": correlation_id
+            })
         return
 
     # Handle test mode
     if args.test:
-        print(f"🧪 Test Mode: Would process question: '{args.question}'")
+        correlation_id = start_request_tracking()
+        cli_logger.info("Test mode initiated", extra={
+            "event": "test_mode_started",
+            "question": args.question,
+            "session_id": session_id,
+            "correlation_id": correlation_id
+        })
+        
         if session_id:
-            print(f"📱 With session ID: {session_id}")
-        print("✅ Import test successful! The CLI is working correctly.")
-        print("\nWhen you have API keys, remove --test to get real answers.")
+            cli_logger.info("Test mode with session", extra={
+                "event": "test_mode_session_provided",
+                "session_id": session_id,
+                "correlation_id": correlation_id
+            })
+            
+        cli_logger.info("Import test successful", extra={
+            "event": "import_test_success",
+            "correlation_id": correlation_id
+        })
         return
 
     # Check for API key (either GROQ or OpenAI)
@@ -142,63 +213,112 @@ def main():
         print("\nSet one in your .env file or export it:")
         print("   export GROQ_API_KEY=your_groq_key")
         print("   export OPENAI_API_KEY=your_openai_key")
+        
+        correlation_id = start_request_tracking()
+        cli_logger.error("Application exiting due to missing API key", extra={
+            "event": "app_exit_no_api_key",
+            "correlation_id": correlation_id
+        })
         sys.exit(1)
 
     # Main processing
     try:
         if args.agent:
             # IMPROVED: Use session-aware multi-agent workflow with fixed session handling
-            print(f"🤖 Using Session-Aware Agent Workflow for: {args.question}")
+            correlation_id = start_request_tracking()
+            cli_logger.info("Starting session-aware agent workflow", extra={
+                "event": "agent_workflow_started",
+                "question": args.question,
+                "session_id": session_id,
+                "correlation_id": correlation_id
+            })
+            
             if session_id:
-                print(f"📱 Session ID: {session_id}")
-            print("=" * 50)
+                cli_logger.info("Agent workflow using session", extra={
+                    "event": "agent_workflow_session_provided",
+                    "session_id": session_id,
+                    "correlation_id": correlation_id
+                })
             
             from backend.code.graph_workflow import run_agentic_askimmigrate
             results = run_agentic_askimmigrate(text=args.question, session_id=session_id)
             
             # Display the synthesis response
             if "synthesis" in results:
-                print("\n" + "="*60)
-                print("📝 IMMIGRATION ASSISTANT RESPONSE")
-                print("="*60)
-                print(results["synthesis"])
-                print("="*60)
+                cli_logger.info("Synthesis response generated", extra={
+                    "event": "synthesis_response_ready",
+                    "has_synthesis": True,
+                    "correlation_id": correlation_id
+                })
             
             # Session summary with enhanced information
             actual_session_id = results.get("session_id")
             if actual_session_id:
                 turn_num = results.get("conversation_turn_number", 1)
                 is_followup = results.get("is_followup_question", False)
-                print(f"\n📱 Session: {actual_session_id} (Turn #{turn_num})")
-                if is_followup:
-                    print("🔗 Detected as follow-up question")
+                
+                cli_logger.info("Session processing completed", extra={
+                    "event": "session_processing_completed",
+                    "session_id": actual_session_id,
+                    "turn_number": turn_num,
+                    "is_followup": is_followup,
+                    "correlation_id": correlation_id
+                })
                 
                 # Show conversation context if available
                 conv_history = results.get("conversation_history", [])
                 if conv_history:
-                    print(f"📚 Conversation history: {len(conv_history)} previous turns")
+                    cli_logger.info("Conversation history available", extra={
+                        "event": "conversation_history_found",
+                        "history_length": len(conv_history),
+                        "correlation_id": correlation_id
+                    })
                 
         else:
             # OLD: Use simple RAG system
             from backend.code.agent_nodes.rag_retrieval_agent.chat_logic import chat
             from backend.code.utils import slugify_chat_session
-            print(f"🤖 Processing question: {args.question}")
+            
+            correlation_id = start_request_tracking()
+            cli_logger.info("Starting RAG workflow", extra={
+                "event": "rag_workflow_started",
+                "question": args.question,
+                "correlation_id": correlation_id
+            })
+            
             rag_session_id = session_id or slugify_chat_session(args.question)
-            print(f"📝 Session ID: {rag_session_id}")
-            print("=" * 50)
+            cli_logger.info("RAG session initialized", extra={
+                "event": "rag_session_initialized",
+                "session_id": rag_session_id,
+                "correlation_id": correlation_id
+            })
             
             answer = chat(session_id=rag_session_id, question=args.question)
-            print(answer)
+            
+            cli_logger.info("RAG answer generated", extra={
+                "event": "rag_answer_generated",
+                "session_id": rag_session_id,
+                "correlation_id": correlation_id
+            })
 
     except Exception as e:
-        print(f"❌ Error: {e}")
-        print(f"\nDebugging information:")
-        print(f"  Question: '{args.question}'")
-        print(f"  Session ID: '{session_id}'")
-        print(f"  Agent mode: {args.agent}")
+        correlation_id = start_request_tracking()
+        cli_logger.error("CLI execution error", extra={
+            "event": "cli_execution_error",
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "question": args.question,
+            "session_id": session_id,
+            "agent_mode": args.agent,
+            "correlation_id": correlation_id
+        })
         
         import traceback
-        traceback.print_exc()
+        cli_logger.error("Full traceback", extra={
+            "event": "cli_traceback",
+            "traceback": traceback.format_exc(),
+            "correlation_id": correlation_id
+        })
         sys.exit(1)
 
 

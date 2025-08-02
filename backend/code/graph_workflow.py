@@ -7,6 +7,7 @@ from backend.code.agent_nodes.synthesis_node import synthesis_node
 from backend.code.agent_nodes.reviewer_node import reviewer_node, route_from_reviewer
 from backend.code.agentic_state import ImmigrationState, ConversationTurn, SessionContext
 from backend.code.session_manager import session_manager
+from backend.code.structured_logging import workflow_logger, PerformanceTimer, start_request_tracking
 from langchain_core.runnables.graph import MermaidDrawMethod
 import os
 from dotenv import load_dotenv
@@ -15,13 +16,14 @@ from datetime import datetime
 
 load_dotenv()
 if os.environ.get("LANGSMITH_TRACING") != "true":
-    print("WARNING: LangSmith tracing is not enabled. Set LANGSMITH_TRACING=true in your environment.")
+    workflow_logger.warning("langsmith_tracing_disabled", 
+                           message="LangSmith tracing is not enabled. Set LANGSMITH_TRACING=true in your environment.")
 
 def create_ask_immigrate_graph() -> CompiledStateGraph:
     """
     Creates the enhanced AskImmigrate2.0 graph with strategic manager coordination.
     """
-    print("🔧 Building enhanced AskImmigrate workflow graph...")
+    workflow_logger.info("graph_building_started")
     
     graph = StateGraph(ImmigrationState)
 
@@ -31,7 +33,7 @@ def create_ask_immigrate_graph() -> CompiledStateGraph:
     graph.add_node("reviewer", reviewer_node)
 
     # Build the workflow edges
-    print("🔗 Connecting workflow edges...")
+    workflow_logger.info("workflow_edges_connecting")
     
     graph.add_edge(START, "manager")
     graph.add_edge("manager", "synthesizer")
@@ -46,7 +48,7 @@ def create_ask_immigrate_graph() -> CompiledStateGraph:
         },
     )
 
-    print("✅ Graph structure completed")
+    workflow_logger.info("graph_structure_completed")
     return graph.compile()
 
 def create_initial_state(text: str, session_id: Optional[str] = None) -> ImmigrationState:
@@ -62,21 +64,29 @@ def create_initial_state(text: str, session_id: Optional[str] = None) -> Immigra
     - GUARANTEED to return a valid ImmigrationState object
     """
     
-    print(f"🔧 Creating initial state for: '{text}'")
+    workflow_logger.info(
+        "initial_state_creation_started",
+        text_length=len(text),
+        session_id=session_id
+    )
     
     # CRITICAL FIX: Sanitize session ID to remove whitespace
     actual_session_id = session_id
     if actual_session_id:
         actual_session_id = actual_session_id.strip()
         if actual_session_id != session_id:
-            print(f"🔧 Fixed session ID whitespace: '{session_id}' -> '{actual_session_id}'")
+            workflow_logger.info(
+                "session_id_sanitized",
+                original_session_id=session_id,
+                sanitized_session_id=actual_session_id
+            )
     
     if actual_session_id is None or actual_session_id == "":
         from backend.code.utils import slugify_chat_session
         actual_session_id = slugify_chat_session(text)
-        print(f"📱 Auto-created session: {actual_session_id}")
+        workflow_logger.info("session_id_auto_created", session_id=actual_session_id)
     else:
-        print(f"📱 Using provided session: '{actual_session_id}'")
+        workflow_logger.info("session_id_provided", session_id=actual_session_id)
     
     # Initialize base state - GUARANTEED to be created
     state = ImmigrationState(
@@ -110,19 +120,35 @@ def create_initial_state(text: str, session_id: Optional[str] = None) -> Immigra
         synthesis_metadata=None
     )
     
-    print(f"✅ Base state created with session ID: {actual_session_id}")
+    workflow_logger.info(
+        "base_state_created",
+        session_id=actual_session_id,
+        text_length=len(text)
+    )
     
     # CRITICAL FIX: Enhanced session context loading with proper debugging
     try:
-        print(f"📱 Loading session context for: '{actual_session_id}'")
+        workflow_logger.info("session_context_loading_started", session_id=actual_session_id)
         
-        # Get or create session with enhanced debugging
-        session_info = session_manager.get_or_create_session(actual_session_id)
-        print(f"📊 Session info retrieved: turn_count={session_info['turn_count']}")
+        with PerformanceTimer(workflow_logger, "session_context_loading", session_id=actual_session_id):
+            # Get or create session with enhanced debugging
+            session_info = session_manager.get_or_create_session(actual_session_id)
+        
+        workflow_logger.info(
+            "session_info_retrieved",
+            session_id=actual_session_id,
+            turn_count=session_info['turn_count']
+        )
         
         # Load conversation history with enhanced debugging
-        conversation_history = session_manager.load_conversation_history(actual_session_id)
-        print(f"📚 Loaded {len(conversation_history)} conversation turns")
+        with PerformanceTimer(workflow_logger, "conversation_history_loading", session_id=actual_session_id):
+            conversation_history = session_manager.load_conversation_history(actual_session_id)
+        
+        workflow_logger.info(
+            "conversation_history_loaded",
+            session_id=actual_session_id,
+            history_length=len(conversation_history)
+        )
         
         # Update state with session information
         state["conversation_history"] = conversation_history
@@ -130,7 +156,11 @@ def create_initial_state(text: str, session_id: Optional[str] = None) -> Immigra
         
         # CRITICAL FIX: Properly build session context only if we have history
         if conversation_history and len(conversation_history) > 0:
-            print(f"📋 Building session context from {len(conversation_history)} turns")
+            workflow_logger.info(
+                "session_context_building_started",
+                session_id=actual_session_id,
+                history_length=len(conversation_history)
+            )
             
             # Extract context data safely
             session_context_data = session_info.get("session_context", {})
@@ -150,26 +180,41 @@ def create_initial_state(text: str, session_id: Optional[str] = None) -> Immigra
                 text, session_context_data
             )
             
-            print(f"✅ Session context loaded successfully:")
-            print(f"   📋 Turns: {len(conversation_history)}")
-            print(f"   🔗 Follow-up: {state['is_followup_question']}")
-            print(f"   🎯 Topics: {ongoing_topics}")
-            print(f"   📋 Visas: {visa_types_mentioned}")
+            workflow_logger.info(
+                "session_context_loaded_successfully",
+                session_id=actual_session_id,
+                history_turns=len(conversation_history),
+                is_followup=state['is_followup_question'],
+                ongoing_topics_count=len(ongoing_topics),
+                visa_types_count=len(visa_types_mentioned)
+            )
             
-            # DEBUG: Show conversation history
+            # DEBUG: Log conversation history details
             for i, turn in enumerate(conversation_history):
-                print(f"   Q{i+1}: {turn.question[:30]}...")
-                print(f"   A{i+1}: {turn.answer[:50]}...")
+                workflow_logger.debug(
+                    "conversation_turn_debug",
+                    session_id=actual_session_id,
+                    turn_number=i+1,
+                    question_preview=turn.question[:30],
+                    answer_preview=turn.answer[:50]
+                )
                 
         else:
-            print("📋 No conversation history found - treating as new session")
+            workflow_logger.info(
+                "new_session_detected",
+                session_id=actual_session_id,
+                message="No conversation history found - treating as new session"
+            )
             state["session_context"] = SessionContext()
             state["is_followup_question"] = False
             
     except Exception as e:
-        print(f"❌ CRITICAL ERROR loading session context: {e}")
-        import traceback
-        traceback.print_exc()
+        workflow_logger.error(
+            "session_context_loading_failed",
+            session_id=actual_session_id,
+            error_type=type(e).__name__,
+            error_message=str(e)
+        )
         
         # Set safe defaults but don't fail - GUARANTEE state is valid
         state["session_context"] = SessionContext()
@@ -177,14 +222,21 @@ def create_initial_state(text: str, session_id: Optional[str] = None) -> Immigra
         state["conversation_history"] = []
         state["conversation_turn_number"] = 1
     
-    print(f"✅ Initial state SUCCESSFULLY created for session: '{actual_session_id}'")
-    print(f"   📊 Turn number: {state['conversation_turn_number']}")
-    print(f"   🔗 Is follow-up: {state['is_followup_question']}")
-    print(f"   📚 History length: {len(state.get('conversation_history', []))}")
+    workflow_logger.info(
+        "initial_state_creation_completed",
+        session_id=actual_session_id,
+        turn_number=state['conversation_turn_number'],
+        is_followup=state['is_followup_question'],
+        history_length=len(state.get('conversation_history', []))
+    )
     
     # CRITICAL: Guarantee we return a valid state object
     if state is None:
-        print("❌ CRITICAL: State is None, creating emergency fallback")
+        workflow_logger.error(
+            "initial_state_creation_critical_failure",
+            session_id=actual_session_id,
+            message="State is None, creating emergency fallback"
+        )
         state = ImmigrationState(
             text=text,
             session_id=actual_session_id or "emergency-fallback",
@@ -203,71 +255,86 @@ def save_conversation_result(final_state: ImmigrationState) -> None:
     
     session_id = final_state.get("session_id")
     if not session_id:
-        print("❌ No session ID found in final state - cannot save conversation")
+        workflow_logger.error("conversation_save_failed", reason="No session ID found in final state")
         return
     
     user_question = final_state.get("text", "")
     synthesis_response = final_state.get("synthesis", "")
     
-    print(f"💾 Attempting to save conversation:")
-    print(f"   📱 Session: {session_id}")
-    print(f"   ❓ Question: '{user_question[:50]}...'")
-    print(f"   💬 Response: {len(synthesis_response)} chars")
+    workflow_logger.info(
+        "conversation_save_attempt",
+        session_id=session_id,
+        question_preview=user_question[:50] if user_question else "",
+        response_length=len(synthesis_response)
+    )
     
     # IMPROVED: Better data validation
     if not user_question:
-        print("❌ No user question found - cannot save conversation")
+        workflow_logger.error("conversation_save_failed", 
+                            session_id=session_id, 
+                            reason="No user question found")
         return
         
     if not synthesis_response or len(synthesis_response.strip()) < 10:
-        print(f"❌ Response too short or empty: '{synthesis_response[:50]}...'")
+        workflow_logger.error("conversation_save_failed", 
+                            session_id=session_id,
+                            reason="Response too short or empty",
+                            response_preview=synthesis_response[:50])
         return
     
     try:
-        # IMPROVED: More robust conversation turn creation
-        turn = ConversationTurn(
-            question=user_question,
-            answer=synthesis_response,
-            timestamp=datetime.now().isoformat(),
-            question_type=final_state.get("structured_analysis", {}).get("question_type"),
-            visa_focus=final_state.get("structured_analysis", {}).get("visa_focus"),
-            tools_used=final_state.get("tools_used", [])
-        )
+        with PerformanceTimer(workflow_logger, "conversation_save", session_id=session_id):
+            # IMPROVED: More robust conversation turn creation
+            turn = ConversationTurn(
+                question=user_question,
+                answer=synthesis_response,
+                timestamp=datetime.now().isoformat(),
+                question_type=final_state.get("structured_analysis", {}).get("question_type"),
+                visa_focus=final_state.get("structured_analysis", {}).get("visa_focus"),
+                tools_used=final_state.get("tools_used", [])
+            )
+            
+            # Save to session with enhanced error handling
+            session_manager.save_conversation_turn(session_id, turn, final_state)
         
-        # Save to session with enhanced error handling
-        session_manager.save_conversation_turn(session_id, turn, final_state)
-        
-        print(f"✅ Conversation successfully saved to session: {session_id}")
+        workflow_logger.info("conversation_save_successful", session_id=session_id)
         
     except Exception as e:
-        print(f"❌ Failed to save conversation: {e}")
-        print(f"   Session ID: {session_id}")
-        print(f"   Question length: {len(user_question)}")
-        print(f"   Response length: {len(synthesis_response)}")
-        import traceback
-        traceback.print_exc()
+        workflow_logger.error(
+            "conversation_save_failed",
+            session_id=session_id,
+            error_type=type(e).__name__,
+            error_message=str(e),
+            question_length=len(user_question),
+            response_length=len(synthesis_response)
+        )
 
 def visualize_graph(graph: StateGraph, save_path: str = OUTPUTS_DIR):
     """
     Visualize the enhanced workflow graph and save it.
     """
-    print("📊 Visualizing the enhanced immigration workflow graph...")
+    workflow_logger.info("graph_visualization_started")
     
     try:
         mermaid_text = graph.get_graph().draw_mermaid()
-        print("\n📋 Workflow Structure:")
-        print(mermaid_text)
+        workflow_logger.debug("workflow_structure_generated", mermaid_preview=mermaid_text[:200])
         
-        png = graph.get_graph().draw_mermaid_png(draw_method=MermaidDrawMethod.API)
-        graph_path = os.path.join(save_path, "enhanced_immigration_workflow.png")
+        with PerformanceTimer(workflow_logger, "graph_visualization"):
+            png = graph.get_graph().draw_mermaid_png(draw_method=MermaidDrawMethod.API)
+            graph_path = os.path.join(save_path, "enhanced_immigration_workflow.png")
+            
+            with open(graph_path, "wb") as f:
+                f.write(png)
         
-        with open(graph_path, "wb") as f:
-            f.write(png)
-        print(f"✅ Enhanced workflow graph saved to {graph_path}")
+        workflow_logger.info("graph_visualization_successful", graph_path=graph_path)
         
     except Exception as e:
-        print(f"⚠️ Could not save graph visualization: {e}")
-        print("💡 Graph structure is still functional, just visualization failed")
+        workflow_logger.warning(
+            "graph_visualization_failed",
+            error_type=type(e).__name__,
+            error_message=str(e),
+            message="Graph structure is still functional, just visualization failed"
+        )
 
 def run_agentic_askimmigrate(text: str, session_id: Optional[str] = None) -> Dict[str, Any]:
     """
@@ -281,19 +348,28 @@ def run_agentic_askimmigrate(text: str, session_id: Optional[str] = None) -> Dic
     - More detailed logging and debugging
     - Robust conversation saving with fallbacks
     """
-    print(f"🚀 Starting enhanced AskImmigrate workflow...")
-    print(f"📋 Question: {text}")
-    if session_id:
-        print(f"📱 Session ID: {session_id}")
-    print("-" * 60)
+    # Initialize correlation tracking for this request
+    correlation_id = start_request_tracking(session_id)
+    
+    workflow_logger.info(
+        "agentic_workflow_started",
+        correlation_id=correlation_id,
+        question_length=len(text),
+        session_id=session_id
+    )
     
     # CRITICAL FIX: Handle potential None return from create_initial_state
     try:
-        initial_state = create_initial_state(text, session_id)
+        with PerformanceTimer(workflow_logger, "initial_state_creation", correlation_id=correlation_id):
+            initial_state = create_initial_state(text, session_id)
         
         # GUARANTEE we have a valid state
         if initial_state is None:
-            print("❌ CRITICAL: create_initial_state returned None, creating emergency state")
+            workflow_logger.error(
+                "initial_state_creation_returned_none",
+                correlation_id=correlation_id,
+                session_id=session_id
+            )
             initial_state = ImmigrationState(
                 text=text,
                 session_id=session_id or f"emergency-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
@@ -306,15 +382,23 @@ def run_agentic_askimmigrate(text: str, session_id: Optional[str] = None) -> Dic
         actual_session_id = initial_state.get("session_id")
         
         if not actual_session_id:
-            print("❌ No session ID in initial state, creating fallback")
-            actual_session_id = f"fallback-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-            initial_state["session_id"] = actual_session_id
-            print(f"🔧 Using fallback session ID: {actual_session_id}")
+            fallback_session_id = f"fallback-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+            initial_state["session_id"] = fallback_session_id
+            
+            workflow_logger.warning(
+                "session_id_fallback_created",
+                correlation_id=correlation_id,
+                fallback_session_id=fallback_session_id
+            )
+            actual_session_id = fallback_session_id
             
     except Exception as e:
-        print(f"❌ CRITICAL ERROR in create_initial_state: {e}")
-        import traceback
-        traceback.print_exc()
+        workflow_logger.error(
+            "initial_state_creation_critical_error",
+            correlation_id=correlation_id,
+            error_type=type(e).__name__,
+            error_message=str(e)
+        )
         
         # Create emergency fallback state
         actual_session_id = f"emergency-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
@@ -326,38 +410,56 @@ def run_agentic_askimmigrate(text: str, session_id: Optional[str] = None) -> Dic
             is_followup_question=False,
             conversation_turn_number=1
         )
-        print(f"🆘 Created emergency state with session: {actual_session_id}")
+        workflow_logger.info("emergency_state_created", 
+                          correlation_id=correlation_id, 
+                          session_id=actual_session_id)
     
     try:
         # Create and run the enhanced graph
-        graph = create_ask_immigrate_graph()
+        with PerformanceTimer(workflow_logger, "graph_creation", correlation_id=correlation_id):
+            graph = create_ask_immigrate_graph()
         
         # Visualize only on first run to avoid spam
         if not session_id or initial_state.get("conversation_turn_number", 1) == 1:
             visualize_graph(graph)
         
-        print("🔄 Executing strategic workflow...")
-        final_state = graph.invoke(initial_state)
+        with PerformanceTimer(workflow_logger, "workflow_execution", 
+                            correlation_id=correlation_id, session_id=actual_session_id):
+            final_state = graph.invoke(initial_state)
         
-        print("✅ Strategic workflow completed successfully!")
+        workflow_logger.info("workflow_execution_successful", 
+                          correlation_id=correlation_id, 
+                          session_id=actual_session_id)
         
         # CRITICAL FIX: Ensure session ID is preserved in final state
         if actual_session_id and actual_session_id not in [None, ""]:
             final_state["session_id"] = actual_session_id
-            print(f"📱 Preserving session ID in final state: {actual_session_id}")
+            workflow_logger.info("session_id_preserved", 
+                              correlation_id=correlation_id, 
+                              session_id=actual_session_id)
             
             # IMPROVED: Save conversation with enhanced error handling
             try:
                 save_conversation_result(final_state)
             except Exception as save_error:
-                print(f"❌ Conversation save failed: {save_error}")
-                print("⚠️ Workflow completed but conversation not saved to session")
+                workflow_logger.error("conversation_save_post_workflow_failed",
+                                   correlation_id=correlation_id,
+                                   session_id=actual_session_id,
+                                   error_message=str(save_error))
         else:
-            print("📱 No valid session ID - conversation not saved")
+            workflow_logger.warning("no_valid_session_id_for_save", 
+                                 correlation_id=correlation_id)
         
         # IMPROVED: Enhanced result summary with better data extraction
-        print("\n📊 WORKFLOW EXECUTION SUMMARY:")
-        print("-" * 50)
+        workflow_logger.info(
+            "workflow_execution_summary",
+            correlation_id=correlation_id,
+            session_id=actual_session_id,
+            turn_number=final_state.get("conversation_turn_number", 1),
+            is_followup=final_state.get("is_followup_question", False),
+            tools_used_count=len(final_state.get("tools_used", [])),
+            synthesis_length=len(final_state.get("synthesis", ""))
+        )
         
         # Session info
         if actual_session_id:
@@ -393,10 +495,15 @@ def run_agentic_askimmigrate(text: str, session_id: Optional[str] = None) -> Dic
         return final_state
         
     except Exception as e:
+        workflow_logger.error(
+            "workflow_execution_failed",
+            correlation_id=correlation_id,
+            session_id=actual_session_id,
+            error_type=type(e).__name__,
+            error_message=str(e)
+        )
+        
         error_msg = f"Strategic workflow execution failed: {str(e)}"
-        print(f"❌ {error_msg}")
-        import traceback
-        traceback.print_exc()
         
         # IMPROVED: Better error state with session preservation
         error_state = {
@@ -441,9 +548,14 @@ For immediate help with immigration questions:
         if actual_session_id:
             try:
                 save_conversation_result(error_state)
-                print(f"📱 Error state saved to session: {actual_session_id}")
-            except:
-                print("📱 Could not save error state to session")
+                workflow_logger.info("error_state_saved_to_session", 
+                                  correlation_id=correlation_id, 
+                                  session_id=actual_session_id)
+            except Exception as session_save_error:
+                workflow_logger.warning("error_state_session_save_failed",
+                                      correlation_id=correlation_id,
+                                      session_id=actual_session_id,
+                                      error_message=str(session_save_error))
         
         return error_state
 
@@ -454,7 +566,7 @@ def list_sessions() -> List[Dict[str, Any]]:
     try:
         return session_manager.list_all_sessions()
     except Exception as e:
-        print(f"❌ Error listing sessions: {e}")
+        workflow_logger.error("session_list_failed", error_message=str(e))
         return []
 
 if __name__ == "__main__":

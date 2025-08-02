@@ -5,6 +5,7 @@ from backend.code.llm import get_llm
 from backend.code.paths import APP_CONFIG_FPATH, PROMPT_CONFIG_FPATH
 from backend.code.utils import load_config
 from backend.code.tools.tool_registry import get_tools_by_agent
+from backend.code.structured_logging import synthesis_logger, PerformanceTimer
 
 config = load_config(APP_CONFIG_FPATH)
 prompt_config = load_config(PROMPT_CONFIG_FPATH)
@@ -21,55 +22,80 @@ def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
     """
     
     if state.get("synthesis_approved", False):
-        print("📝 Synthesis: Already approved, skipping...")
+        synthesis_logger.info("synthesis_already_approved", message="Synthesis already approved, skipping")
         return {}
 
-    print("📝 Synthesis: Creating dynamic session-aware response...")
-
+    session_id = state.get("session_id", "")
     user_question = state.get("text", "")
     workflow_parameters = state.get("workflow_parameters", {})
     rag_context = state.get("rag_response", "")
     conversation_history = state.get("conversation_history", [])
     is_followup = state.get("is_followup_question", False)
-    session_id = state.get("session_id", "")
     
-    print(f"📄 Synthesis inputs:")
-    print(f"   ❓ Question: {user_question[:50]}...")
-    print(f"   🔗 Is follow-up: {is_followup}")
-    print(f"   📚 History: {len(conversation_history)} turns")
-    print(f"   📚 RAG context: {len(rag_context)} chars")
+    synthesis_logger.info(
+        "synthesis_started",
+        session_id=session_id,
+        question_length=len(user_question),
+        is_followup=is_followup,
+        history_length=len(conversation_history),
+        rag_context_length=len(rag_context)
+    )
 
     # Build comprehensive session context
-    session_context = build_session_context_for_llm(
-        conversation_history, is_followup, session_id, user_question
-    )
+    with PerformanceTimer(synthesis_logger, "session_context_building", session_id=session_id):
+        session_context = build_session_context_for_llm(
+            conversation_history, is_followup, session_id, user_question
+        )
     
     # Create dynamic prompt based on question type and context
-    prompt = create_dynamic_synthesis_prompt(
-        user_question, rag_context, session_context, workflow_parameters
-    )
+    with PerformanceTimer(synthesis_logger, "prompt_creation", session_id=session_id):
+        prompt = create_dynamic_synthesis_prompt(
+            user_question, rag_context, session_context, workflow_parameters
+        )
     
     # Use LLM without tool calling to avoid errors
     try:
         llm = get_llm(config.get("llm", "gpt-4o-mini"))
         # CRITICAL: Don't bind tools to avoid the tool calling errors
-        response = llm.invoke(prompt)
-        synthesis_content = response.content
+        with PerformanceTimer(synthesis_logger, "llm_generation", session_id=session_id):
+            response = llm.invoke(prompt)
+            synthesis_content = response.content
         
-        print(f"✅ LLM generated response: {len(synthesis_content)} chars")
+        synthesis_logger.info(
+            "llm_response_generated",
+            session_id=session_id,
+            response_length=len(synthesis_content)
+        )
         
         # Validate response quality
         if not synthesis_content or len(synthesis_content.strip()) < 20:
-            print("⚠️ LLM response too short, creating fallback")
+            synthesis_logger.warning(
+                "llm_response_too_short",
+                session_id=session_id,
+                response_length=len(synthesis_content.strip()) if synthesis_content else 0
+            )
             synthesis_content = create_fallback_response(
                 user_question, conversation_history, is_followup, rag_context
             )
         
     except Exception as e:
-        print(f"❌ LLM synthesis failed: {e}")
+        synthesis_logger.error(
+            "llm_synthesis_failed",
+            session_id=session_id,
+            error_type=type(e).__name__,
+            error_message=str(e)
+        )
         synthesis_content = create_fallback_response(
             user_question, conversation_history, is_followup, rag_context
         )
+    
+    synthesis_logger.info(
+        "synthesis_completed",
+        session_id=session_id,
+        final_response_length=len(synthesis_content),
+        tools_used_count=2,
+        strategy_applied=str(workflow_parameters.get("question_type", "unknown"))
+    )
     
     return {
         "synthesis": synthesis_content,
