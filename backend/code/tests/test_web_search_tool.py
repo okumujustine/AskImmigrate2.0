@@ -46,29 +46,25 @@ def test_web_search():
         print("🎉 Web search tool is working correctly!")
         
         # Test if it's returning real data or mocks
-        if results and len(results) > 0:
-            first_result = results[0]
-            if "mock" in first_result.get('title', '').lower() or "mock" in first_result.get('snippet', '').lower():
-                print("⚠️  WARNING: Results appear to be mock data")
-                return False
-            else:
-                print("✅ Results appear to be real web search data")
-                return True
+        assert results and len(results) > 0, "No search results returned"
         
-        return False
+        first_result = results[0]
+        mock_indicators = "mock" in first_result.get('title', '').lower() or "mock" in first_result.get('snippet', '').lower()
+        assert not mock_indicators, "Results appear to be mock data"
+        
+        print("✅ Results appear to be real web search data")
         
     except Exception as e:
         print(f"❌ Error testing web search tool: {str(e)}")
         print(f"Error type: {type(e).__name__}")
         import traceback
         traceback.print_exc()
-        return False
+        raise
 
 if __name__ == "__main__":
-    success = test_web_search()
-    if success:
+    try:
+        test_web_search()
         print("\n🚀 Web search tool test PASSED!")
-    else:
-        print("\n💥 Web search tool test FAILED!")
-    
-    sys.exit(0 if success else 1)
+    except Exception as e:
+        print(f"\n💥 Web search tool test FAILED: {e}")
+        sys.exit(1)

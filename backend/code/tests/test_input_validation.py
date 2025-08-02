@@ -477,7 +477,7 @@ class TestEdgeCases:
         """Test that validation integrates with logging system."""
         validator = InputValidator()
         
-        with patch('backend.code.input_validation.manager_logger') as mock_logger:
+        with patch('input_validation.manager_logger') as mock_logger:
             query = "How do I apply for H-1B status?"
             result = validator.validate_query(query, "test-session-logging")
             

@@ -24,7 +24,7 @@ from typing import Dict, List, Any
 backend_code_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(backend_code_dir))
 
-class TestRunner:
+class ProductionTestRunner:
     """Comprehensive test runner for Hillary's responsibilities."""
     
     def __init__(self):
@@ -378,7 +378,7 @@ class TestRunner:
 
 def main():
     """Main test execution."""
-    runner = TestRunner()
+    runner = ProductionTestRunner()
     
     try:
         results = runner.run_all_tests()
