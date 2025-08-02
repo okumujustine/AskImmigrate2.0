@@ -11,6 +11,9 @@ backend/config/config_loader.py
 tmp/
 temp.json
 
+# Claude AI assistant artifacts
+.claude/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
