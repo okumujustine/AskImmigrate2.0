@@ -11,8 +11,9 @@ import shutil
 def clear_all_sessions():
     """Clear all session data from backend databases"""
     
-    # Database paths (relative to current directory)
-    outputs_dir = "outputs"
+    # Database paths (relative to backend/code directory)
+    backend_code_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    outputs_dir = os.path.join(backend_code_dir, "outputs")
     agentic_sessions_db = os.path.join(outputs_dir, "agentic_sessions.db")
     chat_history_db = os.path.join(outputs_dir, "chat_history.db")
     
