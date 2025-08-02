@@ -1,5 +1,6 @@
 import type { Message } from '../types/chat';
 import { mockAskQuestion } from './mockApi';
+import { getPersistentBrowserFingerprint } from './browserFingerprint';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8088';
 const USE_MOCK_API = false; // Set to true to use mock API instead of real API
@@ -54,8 +55,16 @@ export const askQuestion = async (
   }
 
   try {
-    const requestBody: { question: string; session_id?: string } = {
+    // Get client fingerprint for session isolation
+    const clientFingerprint = getPersistentBrowserFingerprint();
+    
+    const requestBody: { 
+      question: string; 
+      session_id?: string;
+      client_fingerprint: string;
+    } = {
       question,
+      client_fingerprint: clientFingerprint,
     };
 
     // Include session_id if we have one
@@ -133,7 +142,14 @@ export const getChatSessions = async (userId: string) => {
   }
 
   try {
-    const response = await fetch(`${API_BASE_URL}/session-ids`);
+    // Get client fingerprint for session filtering
+    const clientFingerprint = getPersistentBrowserFingerprint();
+    
+    // Include client fingerprint as query parameter for session filtering
+    const url = new URL(`${API_BASE_URL}/session-ids`);
+    url.searchParams.append('client_fingerprint', clientFingerprint);
+    
+    const response = await fetch(url.toString());
     if (!response.ok) {
       throw new Error('Failed to fetch chat sessions');
     }
@@ -175,10 +191,13 @@ export const createNewChatSession = async (userId: string) => {
     };
   }
 
-  // For your API, new sessions are created automatically when sending the first message
-  // So we just return a placeholder that will be replaced when the first message is sent
+  // For our API, new sessions are created automatically when sending the first message
+  // Generate a temporary session ID that includes client fingerprint for consistency
+  const clientFingerprint = getPersistentBrowserFingerprint();
+  const tempSessionId = `new-${clientFingerprint.split('-')[0]}-${Date.now()}`;
+  
   return {
-    id: `new-session-${Date.now()}`,
+    id: tempSessionId,
     userId,
     title: 'New Chat',
     createdAt: new Date().toISOString(),
