@@ -6,10 +6,15 @@ import { ChatSidebar } from './components/ChatSidebar';
 import { LoadingMessage } from './components/LoadingMessage';
 import { SessionStatus } from './components/SessionStatus';
 import { askQuestion, createNewChatSession, getChatSessions } from './services/api';
+import { getPersistentBrowserFingerprint } from './services/browserFingerprint';
 import type { ChatSession, User } from './types/chat';
 
 function App() {
-  const [user] = useState<User>({ id: 'user-123', name: 'User' }); // Mock user
+  // Initialize user with browser fingerprint for anonymous isolation
+  const [user] = useState<User>(() => {
+    const clientId = getPersistentBrowserFingerprint();
+    return { id: clientId, name: 'User' };
+  });
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [currentSession, setCurrentSession] = useState<ChatSession | null>(null);
   const [isLoading, setIsLoading] = useState(false);

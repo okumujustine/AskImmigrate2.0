@@ -4,10 +4,8 @@
  */
 
 import { 
-  generateBrowserFingerprint, 
   getPersistentBrowserFingerprint,
-  getBrowserFingerprintInfo,
-  clearBrowserFingerprint 
+  getBrowserFingerprintInfo
 } from './browserFingerprint';
 
 import {
@@ -15,7 +13,6 @@ import {
   saveClientSession,
   updateClientSession,
   deleteClientSession,
-  clearClientSessions,
   getSessionStorageStats
 } from './sessionStorage';
 
