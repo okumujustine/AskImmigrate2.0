@@ -91,7 +91,7 @@ class TestInputValidatorCore:
         result = validator.validate_query(long_query, "test-session")
         assert result.is_valid == False
         assert any("too long" in error for error in result.errors)
-        assert "Query truncated" in result.warnings
+        assert any("Query truncated" in warning for warning in result.warnings)
         assert result.sanitized_length <= validator.MAX_QUERY_LENGTH
     
     @pytest.mark.unit
@@ -103,12 +103,12 @@ class TestInputValidatorCore:
         # Test integer input
         result = validator.validate_query(12345, "test-session")
         assert result.is_valid == False
-        assert "Query must be a string" in result.errors
+        assert any("Query must be a string" in error for error in result.errors)
         
         # Test list input
         result = validator.validate_query(["test", "query"], "test-session")
         assert result.is_valid == False
-        assert "Query must be a string" in result.errors
+        assert any("Query must be a string" in error for error in result.errors)
 
 class TestSecurityValidation:
     """Security-focused validation tests."""

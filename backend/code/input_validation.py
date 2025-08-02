@@ -97,6 +97,28 @@ class InputValidator:
         Returns:
             ValidationResult with validation status and sanitized input
         """
+        # Handle None input first (special case for empty query)
+        if query is None:
+            return ValidationResult(
+                is_valid=False,
+                sanitized_input="",
+                errors=["Query cannot be empty"],
+                warnings=[],
+                sanitized_length=0,
+                original_length=0
+            )
+        
+        # Handle non-string inputs
+        if not isinstance(query, str):
+            return ValidationResult(
+                is_valid=False,
+                sanitized_input="",
+                errors=[f"Query must be a string, got {type(query).__name__}"],
+                warnings=[],
+                sanitized_length=0,
+                original_length=0
+            )
+        
         manager_logger.info(
             "input_validation_started",
             original_length=len(query) if query else 0,
@@ -190,13 +212,14 @@ class InputValidator:
         if len(session_id) > self.MAX_SESSION_ID_LENGTH:
             return False, ""
         
-        # Only allow alphanumeric, hyphens, and underscores
-        sanitized = re.sub(r'[^a-zA-Z0-9\-_]', '', session_id)
-        
-        if not sanitized or len(sanitized) < 3:
+        # Check if original contains invalid characters (stricter validation)
+        if not re.match(r'^[a-zA-Z0-9\-_]+$', session_id):
             return False, ""
         
-        return True, sanitized
+        if len(session_id) < 3:
+            return False, ""
+        
+        return True, session_id
     
     def _detect_injection_attempts(self, query: str) -> List[str]:
         """Detect potential injection attacks."""

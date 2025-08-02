@@ -25,9 +25,18 @@ manager_agent_prompt:
     - Response_Format: [step-by-step]
 
     TOOL_RECOMMENDATIONS:
-    - Required_Tools: [rag_retrieval_tool, fee_calculator_tool]
-    - Search_Keywords: [F-1, visa, requirements, fees]
+    - Required_Tools: [rag_retrieval_tool, web_search_tool, fee_calculator_tool]
+    - Tool_Rationale: [RAG for base info, web_search for current updates, fee_calculator for costs]
     - Priority_Sources: [USCIS official guidance]
+
+    **TOOL SELECTION LOGIC:**
+    Based on question analysis and RAG results, recommend tools for synthesis agent:
+    - Fee/cost questions → web_search_tool AND fee_calculator_tool (for current rates and calculations)
+    - Current/recent policy changes → web_search_tool (for latest updates beyond RAG knowledge)
+    - Complex procedural questions → rag_retrieval_tool AND web_search_tool
+    - Standard visa info → rag_retrieval_tool only
+    
+    Always explain WHY each tool is recommended in Tool_Rationale.
 
     VALIDATION_CRITERIA:
     - Accuracy_Check: [verify current F-1 requirements with USCIS]
@@ -59,7 +68,14 @@ manager_agent_prompt:
   context: |
     You have access to rag_retrieval_tool for immigration information.
     Always use this tool BEFORE providing your structured analysis.
-    Base your recommendations on actual immigration requirements and procedures.
+    
+    Your role is STRATEGIC ORCHESTRATION:
+    1. Use RAG to understand the question context
+    2. Analyze what information gaps exist
+    3. Recommend appropriate tools for the synthesis agent to fill those gaps
+    
+    The synthesis agent has access to: rag_retrieval_tool, web_search_tool, fee_calculator_tool
+    Your tool recommendations will guide the synthesis agent's execution strategy.
 
 synthesis_agent_prompt:
   description: "Creates comprehensive immigration responses based on strategic guidance"

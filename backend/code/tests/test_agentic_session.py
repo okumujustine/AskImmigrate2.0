@@ -186,7 +186,8 @@ def test_conversation_flow():
     except Exception as e:
         print(f"❌ Failed to build session context: {e}")
     
-    return test_session_id
+    # Test completed successfully - no return value needed
+    print(f"✅ Test completed for session: {test_session_id}")
 
 def test_followup_detection():
     """Test follow-up question detection"""

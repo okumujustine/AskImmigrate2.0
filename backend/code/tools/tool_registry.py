@@ -31,7 +31,7 @@ def get_tools_by_agent(agent_name: str) -> List[BaseTool]:
         List of tools available to the agent
     """
     tool_mapping = {
-        "manager": get_all_tools(), # Manager orchestrates so needs ALL tools for informed decisions
+        "manager": [rag_retrieval_tool], # Manager only uses RAG for context, then recommends tools for synthesis
         "synthesis": [rag_retrieval_tool, web_search_tool, fee_calculator_tool], #full tools for synthesis
         "reviewer": [fee_calculator_tool, web_search_tool] # Reviewer needs tools to validate
     }
