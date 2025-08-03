@@ -15,9 +15,12 @@ from backend.code.paths import OUTPUTS_DIR
 from datetime import datetime
 
 load_dotenv()
-if os.environ.get("LANGSMITH_TRACING") != "true":
-    workflow_logger.warning("langsmith_tracing_disabled", 
-                           details="LangSmith tracing is not enabled. Set LANGSMITH_TRACING=true in your environment.")
+if os.environ.get("LANGSMITH_TRACING") == "true":
+    workflow_logger.info("langsmith_tracing_enabled", 
+                        details="LangSmith tracing is enabled. Runs will be tracked in LangSmith dashboard.")
+else:
+    workflow_logger.info("langsmith_tracing_disabled", 
+                        details="LangSmith tracing is disabled. To enable, set LANGSMITH_TRACING=true in your environment.")
 
 def create_ask_immigrate_graph() -> CompiledStateGraph:
     """
