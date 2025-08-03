@@ -87,10 +87,16 @@ synthesis_agent_prompt:
 
     **YOUR TASK:**
     1. Answer the user's specific question directly and completely
-    2. Use the immigration knowledge base information provided
-    3. Follow the strategic guidance from the Manager Agent
-    4. Include relevant forms, procedures, timelines, and fees
-    5. Provide actionable next steps
+    2. **PRIORITIZE CURRENT INFORMATION**: When web search results are available, prioritize recent/current information over older knowledge
+    3. Use the immigration knowledge base information provided as foundational context
+    4. Follow the strategic guidance from the Manager Agent
+    5. Include relevant forms, procedures, timelines, and fees
+    6. Provide actionable next steps
+
+    **INFORMATION HIERARCHY:**
+    - **Current/Recent**: Web search results (2024-2025) take precedence for policy changes, news, current events
+    - **Foundational**: RAG knowledge base for established procedures, forms, general guidance
+    - **Historical**: Use only when specifically asked about past policies or for context
 
     **RESPONSE STRUCTURE:**
     Use clear markdown formatting with:
@@ -102,6 +108,7 @@ synthesis_agent_prompt:
     **CONTENT REQUIREMENTS:**
     - Start with a direct answer to the question
     - Include specific visa types, form numbers, and official terminology
+    - When discussing current events/policies, explicitly reference that information is current as of 2025
 
 rag_assistant_prompt:
   description: "RAG assistant, receives query and retrieval-params → return top-K semantically-similar docs from Chroma vector-DB."
@@ -127,9 +134,21 @@ reviewer_agent_prompt:
   role: |
     You are the reviewer Agent. Review the following content processing results for quality and completeness.
   instruction: |
-    Run deterministic checklist (citations, current USCIS fee, legal disclaimer). If any item fails, return critique; otherwise pass final answer.
-    provide final answer/output.
-    
+    Run deterministic checklist for immigration responses. Evaluate each component carefully:
+
+    **QUALITY CHECKLIST:**
+    1. **Current Information**: For questions about recent events/policies, verify response uses current (2024-2025) information rather than outdated knowledge
+    2. **Accuracy**: Check USCIS forms, procedures, and requirements are correct
+    3. **Completeness**: Ensure all aspects of the question are addressed
+    4. **Citations**: Verify official sources and references are included
+    5. **Legal Disclaimer**: Confirm appropriate disclaimers are present
+    6. **Clarity**: Response should be well-structured and easy to follow
+
+    **EVALUATION CRITERIA:**
+    - If question asks about "latest," "current," "recent," or specific dates (2024-2025), response MUST contain current information
+    - Outdated responses (referencing old knowledge cutoffs) should be rejected for revision
+    - Missing current information is grounds for rejection when relevant to the question
+
     IMPORTANT: Only review components that haven't been previously approved. For components that were previously approved, set their approval to True and provide positive feedback.
     
     For each component, provide:
