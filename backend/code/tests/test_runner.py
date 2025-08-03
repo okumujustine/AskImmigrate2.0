@@ -4,7 +4,21 @@ AskImmigrate2.0 Test Runner
 Author: Hillary Arinda
 Purpose: Comprehensive test execution and reporting for production readiness
 
-This script runs all test suites and generates reports for:
+This script runs all test su        result = self.run_command([
+            sys.executable, "-m", "coverage", "run",
+            "--source", "backend/code",
+            "-m", "pytest", "backend/code/tests/",
+            "-v", "--tb=short"
+        ])
+        
+        if result["success"]:
+            # Generate HTML and JSON reports using .coveragerc configuration
+            self.run_command([sys.executable, "-m", "coverage", "html"])
+            self.run_command([sys.executable, "-m", "coverage", "json"])
+            
+            print("✅ Coverage report generated")
+            print("   📄 HTML report: backend/code/tests/htmlcov/index.html")
+            print(f"   📄 JSON report: backend/code/tests/coverage.json")rates reports for:
 1. Manager Node Testing
 2. Input Validation Testing
 3. Retry Logic Testing
@@ -28,7 +42,10 @@ class ProductionTestRunner:
     """Comprehensive test runner for Hillary's responsibilities."""
     
     def __init__(self):
-        self.project_root = backend_code_dir
+        # Project root is 3 levels up from tests directory
+        self.project_root = Path(__file__).parent.parent.parent.parent
+        self.backend_code_dir = backend_code_dir
+        self.tests_dir = Path(__file__).parent  # backend/code/tests directory
         self.test_results = {}
         self.start_time = time.time()
         
@@ -39,7 +56,7 @@ class ProductionTestRunner:
                 command,
                 capture_output=capture_output,
                 text=True,
-                cwd=self.project_root
+                cwd=self.project_root  # Use actual project root for commands
             )
             return {
                 "success": result.returncode == 0,
@@ -60,7 +77,8 @@ class ProductionTestRunner:
         print("📦 Installing test dependencies...")
         
         result = self.run_command([
-            sys.executable, "-m", "pip", "install", "-r", "requirements-test.txt"
+            sys.executable, "-m", "pip", "install", "-r", 
+            str(self.project_root / "requirements-test.txt")
         ])
         
         if result["success"]:
@@ -183,24 +201,26 @@ class ProductionTestRunner:
         print("\n📊 Generating Coverage Report...")
         print("=" * 50)
         
-        # Run tests with coverage
+        # Run tests with coverage using .coveragerc configuration
         result = self.run_command([
             sys.executable, "-m", "pytest",
             "backend/code/tests/",
             "--cov=backend/code",
-            "--cov-report=term-missing",
-            "--cov-report=html:htmlcov",
-            "--cov-report=json:coverage.json"
+            "--cov-report=term-missing"
         ])
         
         if result["success"]:
+            # Generate HTML and JSON reports using .coveragerc paths
+            self.run_command([sys.executable, "-m", "coverage", "html"])
+            self.run_command([sys.executable, "-m", "coverage", "json"])
+            
             print("✅ Coverage report generated")
-            print("   📄 HTML report: htmlcov/index.html")
-            print("   📄 JSON report: coverage.json")
+            print("   📄 HTML report: backend/code/tests/htmlcov/index.html")
+            print(f"   📄 JSON report: backend/code/tests/coverage.json")
             
             # Try to read coverage percentage
             try:
-                coverage_file = self.project_root / "coverage.json"
+                coverage_file = self.tests_dir / "coverage.json"
                 if coverage_file.exists():
                     with open(coverage_file, 'r') as f:
                         coverage_data = json.load(f)
@@ -367,7 +387,7 @@ class ProductionTestRunner:
     
     def save_results(self, results: Dict[str, Any]):
         """Save test results to file."""
-        results_file = self.project_root / "test_results.json"
+        results_file = self.tests_dir / "test_results.json"
         
         try:
             with open(results_file, 'w') as f:

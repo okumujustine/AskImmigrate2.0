@@ -20,5 +20,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           python -m spacy download en_core_web_sm
-      - name: Run tests
-        run: pytest backend/code/tests/
+      - name: Run tests with coverage
+        run: |
+          pytest backend/code/tests/ \
+            --cov=backend/code \
+            --cov-report=term-missing \
+            --cov-report=xml:backend/code/tests/coverage.xml \
+            --cov-report=json:backend/code/tests/coverage.json
+      
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          file: ./backend/code/tests/coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false

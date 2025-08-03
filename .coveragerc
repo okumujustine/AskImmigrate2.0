@@ -1,0 +1,33 @@
+[run]
+source = backend/code
+omit = 
+    backend/code/tests/*
+    backend/code/examples/*
+    backend/code/scripts/*
+    */venv/*
+    */.venv/*
+    */env/*
+    */__pycache__/*
+    */migrations/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    if self.debug:
+    if settings.DEBUG
+    raise AssertionError
+    raise NotImplementedError
+    if 0:
+    if __name__ == __main__:
+    class .*\bProtocol\):
+    @(abc\.)?abstractmethod
+
+[html]
+directory = backend/code/tests/htmlcov
+
+[xml]
+output = backend/code/tests/coverage.xml
+
+[json]
+output = backend/code/tests/coverage.json
