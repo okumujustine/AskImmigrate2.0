@@ -74,13 +74,19 @@ pip install -r requirements-test.txt
 Create a `.env` file in the project root:
 
 ```env
-# LLM Configuration
+# LLM Configuration (choose one)
 OPENAI_API_KEY=your_openai_api_key_here
 GROQ_API_KEY=your_groq_api_key_here
 HUGGINGFACE_API_TOKEN=your_hf_token_here
 
-# Web Search Configuration
+# Web Search Configuration (required)
 TAVILY_API_KEY=your_tavily_api_key_here
+
+# Optional: LangSmith Tracing and Monitoring
+LANGSMITH_TRACING=true
+LANGSMITH_ENDPOINT="https://api.smith.langchain.com"
+LANGSMITH_API_KEY=your_langsmith_api_key_here
+LANGSMITH_PROJECT="AksImmigrate2.0"
 
 # Application Configuration
 APP_ENV=production
@@ -100,6 +106,28 @@ LLM_TIMEOUT=30
 TOOL_TIMEOUT=15
 MAX_RETRIES=3
 ```
+
+#### Environment Variables Explained
+
+**Required Variables:**
+- `GROQ_API_KEY` or `OPENAI_API_KEY`: Choose one LLM provider
+  - Groq: Fast, free tier available - Get from [console.groq.com](https://console.groq.com/keys)
+  - OpenAI: Requires billing - Get from [platform.openai.com](https://platform.openai.com/api-keys)
+- `TAVILY_API_KEY`: Web search functionality - Get from [tavily.com](https://tavily.com)
+
+**Optional Variables:**
+- `LANGSMITH_*`: LangChain tracing and monitoring
+  - `LANGSMITH_TRACING`: Enable/disable tracing (true/false)
+  - `LANGSMITH_ENDPOINT`: LangSmith API endpoint
+  - `LANGSMITH_API_KEY`: Your LangSmith API key
+  - `LANGSMITH_PROJECT`: Project name for organizing traces
+
+**System Configuration:**
+- `APP_ENV`: Application environment (development/production)
+- `LOG_LEVEL`: Logging verbosity (DEBUG/INFO/WARNING/ERROR)
+- `SESSION_TIMEOUT`: Session expiration time in seconds
+- `MAX_QUERY_LENGTH`: Maximum input query length
+- `RATE_LIMIT_*`: API rate limiting configuration
 
 ### 5. Initialize Data and Models
 

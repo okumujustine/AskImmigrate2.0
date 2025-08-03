@@ -114,14 +114,18 @@ npm install
 ### Environment Setup
 Create `.env` file in the repository root directory:
 ```bash
-# Choose one:
+# Choose one LLM provider:
 GROQ_API_KEY=your-groq-api-key          # Recommended: Fast + Free tier
 OPENAI_API_KEY=your-openai-api-key      # Alternative: Requires billing
 
-# Optional: Enable advanced tracing
+# Web search functionality (required)
+TAVILY_API_KEY=your-tavily-api-key      # Get from: https://tavily.com
+
+# Optional: Enable advanced tracing and monitoring
 LANGSMITH_TRACING=true
+LANGSMITH_ENDPOINT="https://api.smith.langchain.com"
 LANGSMITH_API_KEY=your-langsmith-key
-LANGSMITH_PROJECT=AskImmigrate2.0
+LANGSMITH_PROJECT="AksImmigrate2.0"
 ```
 
 ### Quick Test
