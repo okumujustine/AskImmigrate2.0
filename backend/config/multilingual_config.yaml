@@ -1,0 +1,225 @@
+# =============================================================================
+# AskImmigrate 2.0 - Multilingual Configuration
+# =============================================================================
+
+# Supported languages configuration
+supported_languages:
+  - code: "en"
+    name: "English"
+    native_name: "English"
+    enabled: true
+    native_llm: true
+    translation_quality: 1.0
+    features:
+      native_responses: true
+      ui_translation: true
+      terminology_support: true
+    
+  - code: "es"
+    name: "Spanish"
+    native_name: "Español"
+    enabled: true
+    native_llm: true
+    translation_quality: 0.95
+    features:
+      native_responses: true
+      ui_translation: true
+      terminology_support: true
+    
+  - code: "fr"
+    name: "French"
+    native_name: "Français"
+    enabled: true
+    native_llm: false
+    translation_quality: 0.85
+    features:
+      native_responses: false
+      ui_translation: false
+      terminology_support: true
+    
+  - code: "pt"
+    name: "Portuguese"
+    native_name: "Português"
+    enabled: true
+    native_llm: false
+    translation_quality: 0.85
+    features:
+      native_responses: false
+      ui_translation: false
+      terminology_support: true
+
+# Translation service configuration
+translation:
+  default_provider: "openai"  # "openai", "google", "hybrid"
+  cache_enabled: true
+  cache_ttl_hours: 24
+  max_text_length: 5000
+  
+  # Provider-specific settings
+  providers:
+    openai:
+      model: "gpt-4o"
+      temperature: 0.1
+      max_tokens: 2000
+      context_aware: true
+      immigration_specialized: true
+      
+    google:
+      enabled: true
+      project_id: ""  # Set your Google Cloud project ID
+      fallback_enabled: true
+      
+  # Quality thresholds
+  quality:
+    min_confidence: 0.7
+    use_native_llm_threshold: 0.9
+    fallback_to_translation: true
+    terminology_accuracy_weight: 0.3
+
+# Language detection configuration
+language_detection:
+  default_method: "langdetect"
+  confidence_threshold: 0.8
+  fallback_language: "en"
+  
+  # Auto-detection rules
+  auto_detection:
+    enabled: true
+    min_text_length: 10
+    max_detection_attempts: 2
+    supported_methods: ["langdetect", "fasttext"]
+
+# Immigration terminology configuration
+terminology:
+  preserve_forms: true  # Keep form names like I-20, I-94 unchanged
+  use_glossary: true
+  custom_glossary_path: "backend/config/immigration_glossary.yaml"
+  
+  # Form names that should never be translated
+  preserve_terms:
+    - "I-20"
+    - "I-94" 
+    - "I-485"
+    - "I-130"
+    - "I-140"
+    - "I-765"
+    - "I-129"
+    - "I-539"
+    - "DS-160"
+    - "DS-260"
+    - "N-400"
+    - "USCIS"
+    - "DHS"
+    - "CBP"
+    - "ICE"
+    - "DOS"
+    - "SEVIS"
+
+# Response formatting by language
+formatting:
+  spanish:
+    use_formal_address: true  # Use "usted" instead of "tú"
+    include_cultural_context: true
+    format_dates: "DD/MM/YYYY"
+    currency_format: "USD $"
+    structured_headers: true
+    
+  french:
+    use_formal_address: true
+    include_cultural_context: true
+    format_dates: "DD/MM/YYYY"
+    currency_format: "$ USD"
+    structured_headers: true
+    
+  portuguese:
+    use_formal_address: true
+    include_cultural_context: true
+    format_dates: "DD/MM/YYYY"
+    currency_format: "USD $"
+    structured_headers: true
+
+# Caching configuration
+caching:
+  redis:
+    enabled: true
+    host: "localhost"
+    port: 6379
+    db: 1
+    ttl_hours: 24
+    max_memory_mb: 100
+    
+  # Cache strategies
+  strategies:
+    translation_cache: true
+    language_detection_cache: true
+    terminology_cache: true
+    session_preference_cache: true
+
+# Session management
+sessions:
+  language_persistence: true
+  auto_language_update: true
+  preference_weight: 0.8
+  detection_weight: 0.2
+  
+  # Session context
+  context:
+    store_original_questions: true
+    store_translation_metadata: true
+    max_context_turns: 10
+
+# Performance and monitoring
+performance:
+  max_response_time_seconds: 10
+  cache_hit_rate_target: 0.85
+  translation_quality_target: 0.9
+  
+  # Circuit breaker settings
+  circuit_breaker:
+    failure_threshold: 5
+    recovery_timeout_seconds: 60
+    enabled: true
+    
+  # Monitoring
+  monitoring:
+    log_all_translations: false  # Set to true for debugging
+    collect_feedback: true
+    auto_improve: true
+    performance_tracking: true
+
+# Error handling
+error_handling:
+  fallback_to_english: true
+  retry_failed_translations: 2
+  max_fallback_attempts: 3
+  graceful_degradation: true
+  
+  # Error messages by language
+  error_messages:
+    en: "I apologize, but I encountered an error processing your question. Please try again."
+    es: "Disculpe, pero encontré un error al procesar su pregunta. Por favor, inténtelo de nuevo."
+    fr: "Je m'excuse, mais j'ai rencontré une erreur en traitant votre question. Veuillez réessayer."
+    pt: "Peço desculpas, mas encontrei um erro ao processar sua pergunta. Tente novamente."
+
+# Feature flags
+features:
+  auto_language_detection: true
+  session_language_persistence: true
+  translation_caching: true
+  quality_feedback_collection: true
+  real_time_translation_stats: true
+  multilingual_session_analytics: true
+  native_spanish_llm: true
+  immigration_terminology_correction: true
+  cross_language_session_continuity: true
+
+# Analytics and reporting
+analytics:
+  track_language_distribution: true
+  track_translation_quality: true
+  track_user_satisfaction: true
+  track_terminology_accuracy: true
+  
+  # Export settings
+  export_formats: ["json", "csv"]
+  retention_days: 90

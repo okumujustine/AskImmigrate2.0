@@ -253,7 +253,7 @@ def create_initial_state(text: str, session_id: Optional[str] = None) -> Immigra
 
 def save_conversation_result(final_state: ImmigrationState) -> None:
     """
-    Save the conversation result to session history with improved error handling.
+    Save the conversation result to session history with improved error handling and comprehensive multilingual support.
     """
     
     session_id = final_state.get("session_id")
@@ -263,31 +263,47 @@ def save_conversation_result(final_state: ImmigrationState) -> None:
     
     user_question = final_state.get("text", "")
     synthesis_response = final_state.get("synthesis", "")
+    language_info = final_state.get("language_info", {})
     
     workflow_logger.info(
-        "conversation_save_attempt",
+        "conversation_save_attempt_enhanced",
         session_id=session_id,
         question_preview=user_question[:50] if user_question else "",
-        response_length=len(synthesis_response)
+        response_length=len(synthesis_response),
+        user_language=language_info.get("language", "en"),
+        has_translation_info=bool(final_state.get("synthesis_metadata", {}).get("translation_info"))
     )
+
     
-    # IMPROVED: Better data validation
+    # Enhanced data validation
+    validation_errors = []
+    
     if not user_question:
-        workflow_logger.error("conversation_save_failed", 
-                            session_id=session_id, 
-                            reason="No user question found")
-        return
-        
-    if not synthesis_response or len(synthesis_response.strip()) < 10:
-        workflow_logger.error("conversation_save_failed", 
-                            session_id=session_id,
-                            reason="Response too short or empty",
-                            response_preview=synthesis_response[:50])
-        return
+        validation_errors.append("No user question found")
     
+    if not synthesis_response or len(synthesis_response.strip()) < 10:
+        validation_errors.append("Response too short or empty")
+    
+    # Validate language info if present
+    if language_info:
+        if not isinstance(language_info.get("language"), str):
+            validation_errors.append("Invalid language code")
+        if language_info.get("confidence", 0) < 0:
+            validation_errors.append("Invalid language confidence")
+    
+    if validation_errors:
+        workflow_logger.error(
+            "conversation_save_validation_failed",
+            session_id=session_id,
+            validation_errors=validation_errors,
+            question_preview=user_question[:50],
+            response_preview=synthesis_response[:50]
+        )
+        return
+
     try:
-        with PerformanceTimer(workflow_logger, "conversation_save", session_id=session_id):
-            # IMPROVED: More robust conversation turn creation
+        with PerformanceTimer(workflow_logger, "conversation_save_enhanced", session_id=session_id):
+            # Create comprehensive conversation turn
             turn = ConversationTurn(
                 question=user_question,
                 answer=synthesis_response,
@@ -297,20 +313,58 @@ def save_conversation_result(final_state: ImmigrationState) -> None:
                 tools_used=final_state.get("tools_used", [])
             )
             
-            # Save to session with enhanced error handling
-            session_manager.save_conversation_turn(session_id, turn, final_state)
-        
-        workflow_logger.info("conversation_save_successful", session_id=session_id)
-        
+            # UNIFIED SAVE: Single method handles all languages intelligently
+            session_manager.save_conversation_turn(
+                session_id=session_id,
+                turn=turn,
+                final_state=final_state,
+                language_info=language_info if language_info else None
+            )
+            
+            workflow_logger.info(
+                "conversation_save_successful_enhanced",
+                session_id=session_id,
+                user_language=language_info.get("language", "en"),
+                is_multilingual=language_info.get("language", "en") != "en",
+                turn_length=len(synthesis_response),
+                tools_used_count=len(final_state.get("tools_used", []))
+            )
+            
     except Exception as e:
         workflow_logger.error(
-            "conversation_save_failed",
+            "conversation_save_failed_enhanced",
             session_id=session_id,
             error_type=type(e).__name__,
             error_message=str(e),
+            user_language=language_info.get("language", "en"),
             question_length=len(user_question),
-            response_length=len(synthesis_response)
+            response_length=len(synthesis_response),
+            has_language_info=bool(language_info)
         )
+        
+        # Optional: Attempt fallback save without language info
+        try:
+            workflow_logger.info("attempting_fallback_save", session_id=session_id)
+            
+            basic_turn = ConversationTurn(
+                question=user_question,
+                answer=synthesis_response,
+                timestamp=datetime.now().isoformat(),
+                question_type="fallback",
+                visa_focus=None,
+                tools_used=[]
+            )
+            
+            session_manager.save_conversation_turn(session_id, basic_turn, final_state)
+            
+            workflow_logger.info("fallback_save_successful", session_id=session_id)
+            
+        except Exception as fallback_error:
+            workflow_logger.error(
+                "fallback_save_also_failed",
+                session_id=session_id,
+                fallback_error=str(fallback_error)
+            )
 
 def visualize_graph(graph: StateGraph, save_path: str = OUTPUTS_DIR):
     """

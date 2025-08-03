@@ -1,0 +1,140 @@
+# =============================================================================
+# Immigration Terminology Glossary for AskImmigrate 2.0
+# Specialized terms with precise translations
+# =============================================================================
+
+# Spanish translations (60+ specialized terms)
+spanish:
+  # Visa Types
+  "green card": "tarjeta de residencia permanente"
+  "work permit": "documento de autorización de empleo (EAD)"
+  "student visa": "visa de estudiante"
+  "tourist visa": "visa de turista"
+  "business visa": "visa de negocios"
+  "family visa": "visa familiar"
+  "fiancé visa": "visa de prometido(a)"
+  
+  # Government Agencies
+  "uscis": "USCIS (Servicios de Ciudadanía e Inmigración de EE.UU.)"
+  "dhs": "DHS (Departamento de Seguridad Nacional)"
+  "cbp": "CBP (Aduanas y Protección Fronteriza)"
+  "ice": "ICE (Servicio de Inmigración y Control de Aduanas)"
+  "dos": "Departamento de Estado"
+  
+  # Legal Terms
+  "asylum": "asilo político"
+  "refugee": "refugiado"
+  "adjustment of status": "ajuste de estatus"
+  "removal proceedings": "procedimientos de deportación"
+  "deportation": "deportación"
+  "naturalization": "naturalización"
+  "citizenship": "ciudadanía"
+  "permanent resident": "residente permanente"
+  "lawful permanent resident": "residente permanente legal"
+  "conditional resident": "residente condicional"
+  
+  # Process Terms
+  "petition": "petición"
+  "application": "solicitud"
+  "sponsor": "patrocinador"
+  "beneficiary": "beneficiario"
+  "petitioner": "peticionario"
+  "applicant": "solicitante"
+  "priority date": "fecha de prioridad"
+  "biometrics": "datos biométricos"
+  "interview": "entrevista de inmigración"
+  "medical examination": "examen médico"
+  "background check": "verificación de antecedentes"
+  
+  # Document Terms
+  "passport": "pasaporte"
+  "birth certificate": "certificado de nacimiento"
+  "marriage certificate": "certificado de matrimonio"
+  "divorce decree": "decreto de divorcio"
+  "police certificate": "certificado de antecedentes penales"
+  "affidavit of support": "declaración jurada de apoyo económico"
+  "employment authorization": "autorización de empleo"
+  
+  # Status Terms
+  "out of status": "fuera de estatus"
+  "overstay": "permanencia excesiva"
+  "unlawful presence": "presencia ilegal"
+  "authorized stay": "estancia autorizada"
+  "visa waiver": "exención de visa"
+  
+  # Education Terms
+  "opt": "entrenamiento práctico opcional (OPT)"
+  "cpt": "entrenamiento práctico curricular (CPT)"
+  "stem": "STEM (Ciencia, Tecnología, Ingeniería y Matemáticas)"
+  "designated school official": "funcionario escolar designado (DSO)"
+  "sevis": "SEVIS (Sistema de Información para Estudiantes y Visitantes de Intercambio)"
+  
+  # Employment Terms
+  "labor certification": "certificación laboral"
+  "prevailing wage": "salario prevaleciente"
+  "job offer": "oferta de trabajo"
+  "employer": "empleador"
+  "h1b": "visa H-1B (trabajador especializado)"
+  "l1": "visa L-1 (transferencia intraempresarial)"
+  "o1": "visa O-1 (habilidad extraordinaria)"
+  "eb1": "EB-1 (primera preferencia basada en empleo)"
+  "eb2": "EB-2 (segunda preferencia basada en empleo)"
+  "eb3": "EB-3 (tercera preferencia basada en empleo)"
+
+# French translations (core terms)
+french:
+  "green card": "carte verte (carte de résident permanent)"
+  "uscis": "USCIS (Services de citoyenneté et d'immigration des États-Unis)"
+  "work permit": "document d'autorisation d'emploi (EAD)"
+  "asylum": "asile politique"
+  "adjustment of status": "ajustement de statut"
+  "naturalization": "naturalisation"
+  "citizenship": "citoyenneté"
+  "petition": "pétition"
+  "sponsor": "parrain/sponsor"
+  "beneficiary": "bénéficiaire"
+  "priority date": "date de priorité"
+  "biometrics": "données biométriques"
+  "interview": "entretien d'immigration"
+  "medical examination": "examen médical"
+
+# Portuguese translations (core terms)
+portuguese:
+  "green card": "green card (cartão de residente permanente)"
+  "uscis": "USCIS (Serviços de Cidadania e Imigração dos EUA)"
+  "work permit": "documento de autorização de trabalho (EAD)"
+  "asylum": "asilo político"
+  "adjustment of status": "ajuste de status"
+  "naturalization": "naturalização"
+  "citizenship": "cidadania"
+  "petition": "petição"
+  "sponsor": "patrocinador"
+  "beneficiary": "beneficiário"
+  "priority date": "data de prioridade"
+  "biometrics": "dados biométricos"
+  "interview": "entrevista de imigração"
+  "medical examination": "exame médico"
+
+# Terms that should NEVER be translated (always keep in English)
+preserve_terms:
+  - "I-20"
+  - "I-94"
+  - "I-485"
+  - "I-130"
+  - "I-140"
+  - "I-765"
+  - "I-129"
+  - "I-539"
+  - "DS-160"
+  - "DS-260"
+  - "AR-11"
+  - "N-400"
+  - "N-600"
+  - "USCIS"
+  - "DHS"
+  - "CBP"
+  - "ICE"
+  - "DOS"
+  - "NVC"
+  - "SEVIS"
+  - "ELIS"

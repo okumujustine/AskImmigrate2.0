@@ -5,6 +5,7 @@ from backend.code.utils import load_config
 from backend.code.prompt_builder import build_prompt_from_config
 from backend.code.agentic_state import ImmigrationState
 from backend.code.tools.tool_registry import get_all_tools
+from backend.code.multilingual.translation_service import translation_service, SupportedLanguage
 from backend.code.structured_logging import manager_logger, PerformanceTimer
 from backend.code.input_validation import validate_immigration_query, check_rate_limit
 from backend.code.retry_logic import (
@@ -14,6 +15,16 @@ from backend.code.retry_logic import (
     ToolRetryableError
 )
 import re
+
+# Multilingual imports (with graceful fallback)
+try:
+    from backend.code.multilingual.translation_service import translation_service, SupportedLanguage
+    MULTILINGUAL_AVAILABLE = True
+except ImportError:
+    MULTILINGUAL_AVAILABLE = False
+    manager_logger.warning("Multilingual support not available")
+
+import asyncio
 
 config = load_config(APP_CONFIG_FPATH)
 prompt_config = load_config(PROMPT_CONFIG_FPATH)
@@ -93,7 +104,66 @@ def validate_and_sanitize_input(state: ImmigrationState) -> Dict[str, Any]:
         "validation_warnings": validation_result.warnings
     }
 
-def build_session_aware_prompt(user_question: str, state: ImmigrationState) -> str:
+async def detect_user_language(user_question: str, session_id: str) -> Dict[str, Any]:
+    """Detect user language and return language info"""
+    
+    if not MULTILINGUAL_AVAILABLE:
+        return {
+            "language": "en",
+            "confidence": 1.0,
+            "detection_method": "multilingual_disabled",
+            "requires_translation": False
+        }
+    
+    try:
+        detection_result = await translation_service.detect_language(user_question)
+        
+        # Validate language support
+        is_supported = detection_result.language in [lang.value for lang in SupportedLanguage]
+        
+        if not is_supported:
+            manager_logger.info(
+                "unsupported_language_fallback",
+                session_id=session_id,
+                detected_language=detection_result.language
+            )
+            return {
+                "language": "en",
+                "confidence": 0.5,
+                "detection_method": "fallback_unsupported",
+                "requires_translation": False,
+                "original_detected": detection_result.language
+            }
+        
+        manager_logger.info(
+            "language_detected",
+            session_id=session_id,
+            language=detection_result.language,
+            confidence=detection_result.confidence
+        )
+        
+        return {
+            "language": detection_result.language,
+            "confidence": detection_result.confidence,
+            "detection_method": detection_result.detection_method,
+            "requires_translation": detection_result.language != "en"
+        }
+        
+    except Exception as e:
+        manager_logger.error(f"Language detection failed: {e}")
+        return {
+            "language": "en",
+            "confidence": 0.0,
+            "detection_method": "error_fallback",
+            "requires_translation": False,
+            "error": str(e)
+        }
+
+def build_session_aware_prompt(user_question: str, state: ImmigrationState, 
+                              language_info: Optional[Dict[str, Any]] = None) -> str:
+    """
+    Enhanced prompt building with language awareness
+    """
     base_prompt = build_prompt_from_config(
         config=prompt_config["manager_agent_prompt"], 
         input_data=user_question
@@ -108,18 +178,28 @@ def build_session_aware_prompt(user_question: str, state: ImmigrationState) -> s
             conversation_context += f"A{i}: {turn.answer}\n\n"
         conversation_context += f"NEW QUESTION: {user_question}\n\n"
     
-    return f"{conversation_context}{base_prompt}"
-   
+    # Add language context if non-English
+    language_context = ""
+    if language_info and language_info.get("language") != "en":
+        language_context = f"""
+LANGUAGE CONTEXT:
+- User's detected language: {language_info['language']}
+- Question language confidence: {language_info['confidence']:.2f}
+- Response should be generated in {language_info['language']} for best user experience
+
+"""
+    
+    return f"{conversation_context}{language_context}{base_prompt}"
 
 def manager_node(state: ImmigrationState) -> Dict[str, Any]:
     """
-    Enhanced manager node with comprehensive validation, retry logic, and error handling.
+    Enhanced manager node with comprehensive validation, retry logic, error handling, and multilingual support.
     
     Args:
         state: Immigration state with user input
         
     Returns:
-        Manager analysis results with tool recommendations and execution results
+        Manager analysis results with tool recommendations, execution results, and language information
     """
     session_id = state.get("session_id")
     
@@ -149,7 +229,19 @@ def manager_node(state: ImmigrationState) -> Dict[str, Any]:
         sanitized_state = validation_result["sanitized_state"]
         user_question = sanitized_state.get("text", "")
         
-        # Step 2: Get ALL tools (manager orchestrates so needs access to everything)
+        # Step 2: Language Detection
+        try:
+            language_info = asyncio.run(detect_user_language(user_question, session_id))
+        except Exception as e:
+            manager_logger.warning(f"Language detection failed: {e}")
+            language_info = {
+                "language": "en",
+                "confidence": 1.0,
+                "detection_method": "fallback",
+                "requires_translation": False
+            }
+        
+        # Step 3: Get ALL tools (manager orchestrates so needs access to everything)
         tools = get_all_tools()
         llm = get_llm(config.get("llm", "gpt-4o-mini"))
         llm_with_tools = llm.bind_tools(tools)
@@ -159,14 +251,15 @@ def manager_node(state: ImmigrationState) -> Dict[str, Any]:
             tool_count=len(tools),
             available_tools=[t.name for t in tools],
             llm_model=config.get("llm", "gpt-4o-mini"),
+            user_language=language_info["language"],
             session_id=session_id
         )
         
-        # Step 3: Build prompt with session awareness
+        # Step 4: Build prompt with session and language awareness
         with PerformanceTimer(manager_logger, "prompt_building", session_id=session_id):
-            prompt = build_session_aware_prompt(user_question, sanitized_state)
+            prompt = build_session_aware_prompt(user_question, sanitized_state, language_info)
         
-        # Step 4: LLM analysis with retry logic
+        # Step 5: LLM analysis with retry logic
         try:
             wrapped_llm_call = wrap_llm_call_with_retry(
                 llm_with_tools.invoke, 
@@ -189,10 +282,11 @@ def manager_node(state: ImmigrationState) -> Dict[str, Any]:
                 "tool_results": {},
                 "tools_used": [],
                 "rag_response": "",
-                "workflow_parameters": {"question_type": "llm_error"}
+                "workflow_parameters": {"question_type": "llm_error"},
+                "language_info": language_info
             }
         
-        # Step 5: Execute tools if LLM requested them
+        # Step 6: Execute tools if LLM requested them
         tool_calls = getattr(response, 'tool_calls', [])
         tool_results = {}
         rag_response_content = ""
@@ -201,6 +295,7 @@ def manager_node(state: ImmigrationState) -> Dict[str, Any]:
             "manager_tool_calls_detected",
             tool_call_count=len(tool_calls),
             tool_names=[call['name'] for call in tool_calls] if tool_calls else [],
+            user_language=language_info["language"],
             session_id=session_id
         )
         
@@ -282,7 +377,7 @@ def manager_node(state: ImmigrationState) -> Dict[str, Any]:
                         "error_type": "configuration_error"
                     }
         
-        # Step 6: Create strategic analysis
+        # Step 7: Create strategic analysis with language information
         strategic_decision = response.content or "Analysis completed."
         
         structured_analysis = {
@@ -290,10 +385,13 @@ def manager_node(state: ImmigrationState) -> Dict[str, Any]:
             "tools_used": [call['name'] for call in tool_calls] if tool_calls else [],
             "session_aware": bool(sanitized_state.get("conversation_history")),
             "complexity": "complex" if len(tool_calls) > 1 else "simple",
-            "analysis_confidence": "high" if tool_calls else "medium"
+            "analysis_confidence": "high" if tool_calls else "medium",
+            "user_language": language_info["language"],
+            "language_confidence": language_info["confidence"],
+            "requires_translation": language_info["requires_translation"]
         }
         
-        # Step 7: Compile final results
+        # Step 8: Compile final results with language information
         final_result = {
             "manager_decision": strategic_decision,
             "structured_analysis": structured_analysis,
@@ -301,7 +399,8 @@ def manager_node(state: ImmigrationState) -> Dict[str, Any]:
             "tools_used": structured_analysis["tools_used"],
             "rag_response": rag_response_content,
             "workflow_parameters": structured_analysis,
-            "validation_warnings": validation_result.get("validation_warnings", [])
+            "validation_warnings": validation_result.get("validation_warnings", []),
+            "language_info": language_info  # NEW: Pass language info to synthesis
         }
         
         manager_logger.info(
@@ -309,6 +408,9 @@ def manager_node(state: ImmigrationState) -> Dict[str, Any]:
             decision_length=len(final_result["manager_decision"]),
             tools_used_count=len(final_result["tools_used"]),
             successful_tools=sum(1 for result in final_result["tool_results"].values() if "error" not in result),
+            user_language=language_info["language"],
+            language_detection_confidence=language_info["confidence"],
+            requires_translation=language_info["requires_translation"],
             session_id=session_id
         )
         
@@ -329,5 +431,6 @@ def manager_node(state: ImmigrationState) -> Dict[str, Any]:
             "tools_used": [],
             "rag_response": "",
             "workflow_parameters": {"question_type": "system_error"},
-            "system_error": str(e)
+            "system_error": str(e),
+            "language_info": {"language": "en", "error": True}
         }

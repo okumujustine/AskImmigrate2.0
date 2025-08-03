@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 from typing import List, Optional
 import time
-
+from typing import Dict, Any, Optional
 from fastapi import FastAPI, Query, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -299,3 +299,238 @@ def health_check():
             "timestamp": datetime.now().isoformat(),
             "error": str(e)
         }
+    
+class MultilingualQueryRequest(BaseModel):
+    question: str
+    language: str = "auto"  # "auto", "en", "es", "fr", "pt"
+    session_id: Optional[str] = None
+    client_fingerprint: Optional[str] = None
+
+class LanguageDetectionRequest(BaseModel):
+    text: str
+
+class MultilingualResponse(BaseModel):
+    answer: str
+    session_id: str
+    language: str
+    metadata: Dict[str, Any]
+
+def get_language_capabilities():
+    """Get supported languages with their capabilities"""
+    return [
+        {
+            "code": "en",
+            "name": "English", 
+            "native_name": "English",
+            "native_llm": True,
+            "translation_available": True
+        },
+        {
+            "code": "es",
+            "name": "Spanish",
+            "native_name": "Español", 
+            "native_llm": True,
+            "translation_available": True
+        },
+        {
+            "code": "fr",
+            "name": "French",
+            "native_name": "Français",
+            "native_llm": False,
+            "translation_available": True
+        },
+        {
+            "code": "pt", 
+            "name": "Portuguese",
+            "native_name": "Português",
+            "native_llm": False,
+            "translation_available": True
+        }
+    ]
+
+supported_languages = ["en", "es", "fr", "pt"]
+
+@app.post("/api/chat/multilingual", response_model=MultilingualResponse)
+async def multilingual_chat(request: MultilingualQueryRequest):
+    """Enhanced chat endpoint with multilingual support"""
+    try:
+        # Import translation service
+        from backend.code.multilingual.translation_service import translation_service
+        
+        # Detect language if set to auto
+        if request.language == "auto":
+            detection_result = await translation_service.detect_language(request.question)
+            detected_language = detection_result.language
+        else:
+            detected_language = request.language
+        
+        # Create session ID if not provided
+        from backend.code.utils import create_anonymous_session_id
+        session_id = request.session_id or create_anonymous_session_id(
+            request.client_fingerprint, request.question
+        )
+        
+        # Process the question through the main workflow
+        from backend.code.graph_workflow import run_agentic_askimmigrate
+        result = run_agentic_askimmigrate(text=request.question, session_id=session_id)
+        
+        # Get the final answer
+        answer = result.get("synthesis", "")
+        
+        # Handle multilingual response if needed
+        if detected_language != "en" and answer:
+            try:
+                if detected_language == "es":
+                    # Use native Spanish response
+                    translation_result = await translation_service.get_native_response(
+                        request.question, "es"
+                    )
+                    answer = translation_result.translated_text
+                    method = translation_result.translation_method
+                else:
+                    # Translate English response to target language
+                    translation_result = await translation_service.translate_text(
+                        text=answer,
+                        target_lang=detected_language,
+                        source_lang="en",
+                        use_immigration_context=True
+                    )
+                    answer = translation_result.translated_text
+                    method = translation_result.translation_method
+                
+                metadata = {
+                    "translation_method": method,
+                    "confidence": translation_result.confidence,
+                    "processing_time": translation_result.processing_time,
+                    "original_language": "en",
+                    "target_language": detected_language
+                }
+                
+            except Exception as e:
+                logger.warning(f"Translation failed: {e}, using English response")
+                metadata = {
+                    "translation_method": "fallback_english",
+                    "error": str(e),
+                    "target_language": detected_language
+                }
+        else:
+            metadata = {
+                "translation_method": "english_native",
+                "target_language": "en"
+            }
+        
+        return MultilingualResponse(
+            answer=answer,
+            session_id=session_id,
+            language=detected_language,
+            metadata=metadata
+        )
+        
+    except Exception as e:
+        logger.error(f"Multilingual chat error: {e}")
+        raise HTTPException(status_code=500, detail=f"Multilingual processing failed: {str(e)}")
+
+@app.post("/api/detect-language")
+async def detect_language(request: LanguageDetectionRequest):
+    """Standalone language detection endpoint"""
+    try:
+        from backend.code.multilingual.translation_service import translation_service
+        
+        result = await translation_service.detect_language(request.text)
+        return {
+            "language": result.language,
+            "confidence": result.confidence,
+            "supported": result.language in supported_languages,
+            "detection_method": result.detection_method
+        }
+    except ImportError:
+        logger.warning("Multilingual service not available for language detection")
+        # Fallback to simple pattern detection
+        text_lower = request.text.lower()
+        if any(char in text_lower for char in ['¿', '¡', 'ñ']):
+            detected_lang = "es"
+            confidence = 0.7
+        elif any(char in text_lower for char in ['ç', 'où', 'français']):
+            detected_lang = "fr" 
+            confidence = 0.6
+        elif 'ção' in text_lower or 'português' in text_lower:
+            detected_lang = "pt"
+            confidence = 0.6
+        else:
+            detected_lang = "en"
+            confidence = 0.8
+            
+        return {
+            "language": detected_lang,
+            "confidence": confidence,
+            "supported": detected_lang in supported_languages,
+            "detection_method": "pattern_fallback"
+        }
+    except Exception as e:
+        logger.error(f"Language detection failed: {e}")
+        raise HTTPException(status_code=500, detail="Language detection failed")
+
+@app.get("/api/languages/supported")
+async def get_supported_languages():
+    """Get list of supported languages with features"""
+    try:
+        from backend.code.multilingual.translation_service import translation_service
+        
+        # Get enhanced capabilities if translation service is available
+        capabilities = get_language_capabilities()
+        
+        # Add service statistics if available
+        try:
+            stats = translation_service.get_stats()
+            return {
+                "supported_languages": capabilities,
+                "service_stats": {
+                    "total_operations": stats.get("total_operations", 0),
+                    "cache_hit_rate": stats.get("cache_hit_rate", 0),
+                    "google_translate_available": stats.get("has_google", False),
+                    "redis_cache_available": stats.get("has_redis", False)
+                },
+                "multilingual_enabled": True
+            }
+        except Exception:
+            return {
+                "supported_languages": capabilities,
+                "multilingual_enabled": True,
+                "service_stats": None
+            }
+            
+    except ImportError:
+        logger.warning("Multilingual service not available")
+        # Return basic capabilities without advanced features
+        basic_capabilities = [
+            {
+                "code": "en",
+                "name": "English", 
+                "native_name": "English",
+                "native_llm": True,
+                "translation_available": False
+            }
+        ]
+        return {
+            "supported_languages": basic_capabilities,
+            "multilingual_enabled": False,
+            "service_stats": None
+        }
+    except Exception as e:
+        logger.error(f"Error getting supported languages: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get language capabilities")
+
+# Also add this import at the top of your api.py file for better organization:
+# (Add this after your existing imports)
+
+def get_translation_service():
+    """Helper function to get translation service with proper error handling"""
+    try:
+        from backend.code.multilingual.translation_service import translation_service
+        return translation_service, True
+    except ImportError:
+        logger.warning("Translation service not available")
+        return None, False
+    except Exception as e:
+        logger.error(f"Error importing translation service: {e}")
+        return None, False

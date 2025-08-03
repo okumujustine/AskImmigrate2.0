@@ -280,7 +280,7 @@ class SessionManager:
             return []
     
     def save_conversation_turn(self, session_id: str, turn: ConversationTurn, 
-                             final_state: ImmigrationState) -> None:
+                         final_state: ImmigrationState, language_info: Dict[str, Any] = None):
         """
         Save conversation turn with enhanced debugging and validation.
         
@@ -289,137 +289,573 @@ class SessionManager:
         - Enhanced validation of input data
         - Better error handling and debugging
         - Transaction rollback on failure
+        - Maintains backward compatibility
+        - Centralizes conversation saving logic
+        - Adds multilingual features incrementally
         """
         
         correlation_id = start_request_tracking()
         session_id = self._sanitize_session_id(session_id)
-        session_logger.info("saving_conversation_turn", session_id=session_id, 
-                          correlation_id=correlation_id)
         
-        # Validate input data
-        if not turn.question or not turn.answer:
-            session_logger.error("invalid_turn_data", 
-                               session_id=session_id,
-                               has_question=bool(turn.question),
-                               has_answer=bool(turn.answer))
-            return
+        # Extract language context with intelligent defaults
+        language_context = self._extract_unified_language_context(language_info, final_state)
         
-        if len(turn.answer.strip()) < 10:
-            session_logger.error("answer_too_short", 
-                               session_id=session_id,
-                               answer_length=len(turn.answer.strip()),
-                               answer_preview=turn.answer[:50])
+        session_logger.info(
+            "unified_conversation_turn_save_started",
+            session_id=session_id,
+            user_language=language_context["language"],
+            is_multilingual=language_context["is_multilingual"],
+            has_translation=language_context["has_translation"],
+            correlation_id=correlation_id
+        )
+        
+        # Validation
+        if not self._validate_turn_data(turn, session_id):
             return
         
         try:
-            with PerformanceTimer(session_logger, "conversation_turn_save", session_id=session_id):
+            with PerformanceTimer(session_logger, "unified_conversation_save", session_id=session_id):
                 with sqlite3.connect(self.db_path) as conn:
-                    # Start transaction
                     conn.execute("BEGIN")
-                
-                try:
-                    # Get current turn count with validation
-                    current_session = conn.execute(
-                        "SELECT turn_count FROM sessions WHERE session_id = ?",
-                        (session_id,)
-                    ).fetchone()
                     
-                    if not current_session:
-                        session_logger.error("session_not_found_during_save", session_id=session_id)
-                        # Try to create the session
-                        conn.execute(
-                            """INSERT INTO sessions (session_id, session_context, turn_count) 
-                               VALUES (?, ?, ?)""",
-                            (session_id, json.dumps({}), 0)
+                    try:
+                        # Get or create session with unified language support
+                        session_data = self._get_or_create_session_unified(
+                            conn, session_id, language_context
                         )
-                        new_turn_number = 1
-                    else:
-                        new_turn_number = current_session[0] + 1
-                    
-                    session_logger.info("saving_turn", session_id=session_id, turn_number=new_turn_number)
-                    
-                    # Insert conversation turn
-                    conn.execute("""
-                        INSERT INTO conversation_turns 
-                        (session_id, turn_number, question, answer, timestamp, 
-                         question_type, visa_focus, tools_used, agent_metadata)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        session_id,
-                        new_turn_number,
-                        turn.question,
-                        turn.answer,
-                        turn.timestamp,
-                        turn.question_type,
-                        json.dumps(turn.visa_focus) if turn.visa_focus else None,
-                        json.dumps(turn.tools_used) if turn.tools_used else None,
-                        json.dumps(final_state.get("synthesis_metadata", {}))
-                    ))
-                    
-                    # Update session context
-                    updated_context = self._update_session_context(session_id, final_state, conn)
-                    
-                    # Update session
-                    conn.execute("""
-                        UPDATE sessions 
-                        SET turn_count = ?, updated_at = ?, session_context = ?
-                        WHERE session_id = ?
-                    """, (
-                        new_turn_number,
-                        datetime.now().isoformat(),
-                        json.dumps(updated_context),
-                        session_id
-                    ))
-                    
-                    # Commit transaction
-                    conn.execute("COMMIT")
-                    
-                    session_logger.info("conversation_turn_saved_successfully", 
-                                       session_id=session_id, 
-                                       turn_number=new_turn_number)
-                    
-                    # Verify the save
-                    verify = conn.execute(
-                        "SELECT turn_count FROM sessions WHERE session_id = ?",
-                        (session_id,)
-                    ).fetchone()
-                    
-                    if verify and verify[0] == new_turn_number:
-                        session_logger.info("Session turn count verified", extra={
-                            "event": "session_turn_count_verified",
-                            "session_id": session_id,
-                            "verified_turn_count": verify[0],
-                            "correlation_id": correlation_id
-                        })
-                    else:
-                        session_logger.warning("Turn count verification failed", extra={
-                            "event": "turn_count_verification_failed",
-                            "session_id": session_id,
-                            "expected_count": new_turn_number,
-                            "actual_count": verify[0] if verify else None,
-                            "correlation_id": correlation_id
-                        })
+                        new_turn_number = session_data["turn_count"] + 1
                         
-                except Exception as e:
-                    conn.execute("ROLLBACK")
-                    raise e
-                    
+                        # Build comprehensive metadata for ALL conversations
+                        agent_metadata = self._build_unified_agent_metadata(
+                            final_state, language_context, turn
+                        )
+                        
+                        # Single insert for all conversation types
+                        conn.execute("""
+                            INSERT INTO conversation_turns 
+                            (session_id, turn_number, question, answer, timestamp, 
+                            question_type, visa_focus, tools_used, agent_metadata)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            session_id,
+                            new_turn_number,
+                            turn.question,
+                            turn.answer,
+                            turn.timestamp,
+                            turn.question_type or ("multilingual" if language_context["is_multilingual"] else "standard"),
+                            json.dumps(turn.visa_focus) if turn.visa_focus else None,
+                            json.dumps(turn.tools_used) if turn.tools_used else None,
+                            json.dumps(agent_metadata)
+                        ))
+                        
+                        # Update session with unified analytics
+                        self._update_unified_session_analytics(
+                            conn, session_id, language_context, new_turn_number, final_state
+                        )
+                        
+                        conn.execute("COMMIT")
+                        
+                        session_logger.info(
+                            "unified_conversation_turn_saved_successfully",
+                            session_id=session_id,
+                            turn_number=new_turn_number,
+                            user_language=language_context["language"],
+                            processing_method=language_context["processing_method"],
+                            correlation_id=correlation_id
+                        )
+                        
+                    except Exception as e:
+                        conn.execute("ROLLBACK")
+                        raise e
+                        
         except Exception as e:
-            session_logger.error("conversation_turn_save_failed",
-                                session_id=session_id,
-                                error_type=type(e).__name__,
-                                error_message=str(e),
-                                question_preview=turn.question[:50],
-                                answer_length=len(turn.answer),
-                                correlation_id=correlation_id)
-            import traceback
-            session_logger.error("conversation_turn_save_traceback", extra={
-                "event": "conversation_turn_save_traceback",
-                "session_id": session_id,
-                "traceback": traceback.format_exc(),
-                "correlation_id": correlation_id
+            session_logger.error(
+                "unified_conversation_save_failed",
+                session_id=session_id,
+                user_language=language_context["language"],
+                error_type=type(e).__name__,
+                error_message=str(e),
+                correlation_id=correlation_id
+            )
+
+    # =============================================================================
+    # HELPER METHODS - ADD THESE TO YOUR SessionManager CLASS
+    # =============================================================================
+
+    def _validate_turn_data(self, turn: ConversationTurn, session_id: str) -> bool:
+        """Validate conversation turn data"""
+        
+        if not turn.question or not turn.answer:
+            session_logger.error(
+                "invalid_turn_data", 
+                session_id=session_id,
+                has_question=bool(turn.question),
+                has_answer=bool(turn.answer)
+            )
+            return False
+        
+        if len(turn.answer.strip()) < 10:
+            session_logger.error(
+                "answer_too_short", 
+                session_id=session_id,
+                answer_length=len(turn.answer.strip()),
+                answer_preview=turn.answer[:50]
+            )
+            return False
+        
+        return True
+
+    def _extract_unified_language_context(self, language_info: Dict[str, Any], 
+                                        final_state: ImmigrationState) -> Dict[str, Any]:
+        """Extract comprehensive language context from all available sources."""
+        
+        context = {
+            "language": "en",
+            "is_multilingual": False,
+            "has_translation": False,
+            "processing_method": "standard",
+            "confidence": 1.0,
+            "detection_metadata": None,
+            "translation_metadata": None
+        }
+        
+        # Extract from language_info parameter (highest priority)
+        if language_info:
+            context["language"] = language_info.get("language", "en")
+            context["confidence"] = language_info.get("confidence", 1.0)
+            context["detection_metadata"] = {
+                "method": language_info.get("detection_method", "manual"),
+                "confidence": context["confidence"],
+                "source": "parameter"
+            }
+        
+        # Extract from final_state (second priority)
+        elif final_state.get("language_info"):
+            state_lang_info = final_state["language_info"]
+            context["language"] = state_lang_info.get("language", "en")
+            context["confidence"] = state_lang_info.get("confidence", 1.0)
+            context["detection_metadata"] = {
+                "method": state_lang_info.get("detection_method", "auto"),
+                "confidence": context["confidence"],
+                "source": "state"
+            }
+        
+        # Extract translation metadata from synthesis
+        synthesis_meta = final_state.get("synthesis_metadata", {})
+        if synthesis_meta.get("translation_info"):
+            context["has_translation"] = True
+            context["translation_metadata"] = synthesis_meta["translation_info"]
+            context["processing_method"] = synthesis_meta["translation_info"].get("method", "unknown")
+        
+        # Set derived flags
+        context["is_multilingual"] = context["language"] != "en"
+        
+        # Determine processing method if not set
+        if context["processing_method"] == "standard":
+            if context["is_multilingual"]:
+                context["processing_method"] = "native_llm" if context["language"] == "es" else "translation"
+            else:
+                context["processing_method"] = "english_native"
+        
+        return context
+
+    def _get_or_create_session_unified(self, conn, session_id: str, 
+                                    language_context: Dict[str, Any]) -> Dict[str, Any]:
+        """Get existing session or create new one with language support."""
+        
+        current_session = conn.execute(
+            "SELECT turn_count, session_context FROM sessions WHERE session_id = ?",
+            (session_id,)
+        ).fetchone()
+        
+        if not current_session:
+            # Create new session with language context
+            session_context = {
+                "preferred_language": language_context["language"],
+                "language_detection_data": language_context.get("detection_metadata"),
+                "created_at": datetime.now().isoformat(),
+                "multilingual_session": language_context["is_multilingual"],
+                "processing_method": language_context["processing_method"]
+            }
+            
+            conn.execute(
+                """INSERT INTO sessions (session_id, session_context, turn_count) 
+                VALUES (?, ?, ?)""",
+                (session_id, json.dumps(session_context), 0)
+            )
+            
+            return {"turn_count": 0, "session_context": session_context}
+        
+        else:
+            # Update existing session with language preference
+            try:
+                existing_context = json.loads(current_session[1]) if current_session[1] else {}
+            except json.JSONDecodeError:
+                existing_context = {}
+            
+            # Smart language preference updating
+            current_lang = existing_context.get("preferred_language", "en")
+            if current_lang != language_context["language"]:
+                existing_context.update({
+                    "preferred_language": language_context["language"],
+                    "previous_language": current_lang,
+                    "language_switched_at": datetime.now().isoformat(),
+                    "language_switch_count": existing_context.get("language_switch_count", 0) + 1
+                })
+            
+            existing_context.update({
+                "last_interaction_language": language_context["language"],
+                "language_updated_at": datetime.now().isoformat(),
+                "processing_method": language_context["processing_method"]
             })
-    
+            
+            conn.execute(
+                "UPDATE sessions SET session_context = ? WHERE session_id = ?",
+                (json.dumps(existing_context), session_id)
+            )
+            
+            return {"turn_count": current_session[0], "session_context": existing_context}
+
+    def _build_unified_agent_metadata(self, final_state: ImmigrationState, 
+                                    language_context: Dict[str, Any], turn: ConversationTurn) -> Dict[str, Any]:
+        """Build comprehensive agent metadata for the conversation turn."""
+        
+        synthesis_meta = final_state.get("synthesis_metadata", {})
+        
+        # Core metadata
+        agent_metadata = {
+            "language": language_context["language"],
+            "is_multilingual": language_context["is_multilingual"],
+            "processing_method": language_context["processing_method"],
+            "turn_timestamp": datetime.now().isoformat(),
+            "language_confidence": language_context["confidence"]
+        }
+        
+        # Language detection information
+        if language_context["detection_metadata"]:
+            agent_metadata["language_detection"] = language_context["detection_metadata"]
+        
+        # Translation information
+        if language_context["translation_metadata"]:
+            agent_metadata["translation_info"] = language_context["translation_metadata"]
+        
+        # Synthesis information
+        if synthesis_meta:
+            agent_metadata["synthesis_info"] = {
+                "response_type": synthesis_meta.get("response_type"),
+                "tools_executed": synthesis_meta.get("tools_executed", 0),
+                "processing_successful": synthesis_meta.get("processing_successful", True),
+                "multilingual_enabled": synthesis_meta.get("multilingual_enabled", False),
+                "quality_indicators": {
+                    "response_length": len(turn.answer),
+                    "tools_used_count": len(turn.tools_used) if turn.tools_used else 0,
+                    "session_aware": synthesis_meta.get("session_aware_response", False)
+                }
+            }
+        
+        # Tool usage summary
+        if turn.tools_used:
+            agent_metadata["tools_summary"] = {
+                "count": len(turn.tools_used),
+                "tools": turn.tools_used,
+                "multilingual_tools": [t for t in turn.tools_used if "multilingual" in t.lower() or "translation" in t.lower()]
+            }
+        
+        return agent_metadata
+
+    def _update_unified_session_analytics(self, conn, session_id: str, 
+                                        language_context: Dict[str, Any], turn_number: int, 
+                                        final_state: ImmigrationState):
+        """Update session with language analytics and metrics."""
+        
+        # Get current session context
+        session_data = conn.execute(
+            "SELECT session_context FROM sessions WHERE session_id = ?",
+            (session_id,)
+        ).fetchone()
+        
+        if session_data and session_data[0]:
+            try:
+                context = json.loads(session_data[0])
+            except:
+                context = {}
+        else:
+            context = {}
+        
+        # Update language analytics
+        analytics = context.get("language_analytics", {})
+        
+        # Track language usage
+        lang_usage = analytics.get("language_usage", {})
+        lang_usage[language_context["language"]] = lang_usage.get(language_context["language"], 0) + 1
+        
+        # Track processing methods
+        method_usage = analytics.get("processing_methods", {})
+        method = language_context["processing_method"]
+        method_usage[method] = method_usage.get(method, 0) + 1
+        
+        # Track translation quality if available
+        if language_context["translation_metadata"]:
+            trans_info = language_context["translation_metadata"]
+            quality_data = analytics.get("translation_quality", [])
+            quality_data.append({
+                "turn": turn_number,
+                "method": trans_info.get("method"),
+                "confidence": trans_info.get("confidence"),
+                "processing_time": trans_info.get("processing_time"),
+                "timestamp": datetime.now().isoformat()
+            })
+            analytics["translation_quality"] = quality_data[-10:]  # Keep last 10
+        
+        # Track language detection accuracy
+        if language_context["detection_metadata"]:
+            detection_data = analytics.get("language_detection", [])
+            detection_data.append({
+                "turn": turn_number,
+                "detected_language": language_context["language"],
+                "confidence": language_context["confidence"],
+                "method": language_context["detection_metadata"].get("method"),
+                "timestamp": datetime.now().isoformat()
+            })
+            analytics["language_detection"] = detection_data[-10:]  # Keep last 10
+        
+        # Update context
+        analytics.update({
+            "language_usage": lang_usage,
+            "processing_methods": method_usage,
+            "total_turns": turn_number,
+            "multilingual_turns": sum(count for lang, count in lang_usage.items() if lang != "en"),
+            "last_updated": datetime.now().isoformat()
+        })
+        
+        context["language_analytics"] = analytics
+        
+        # Save updated context
+        conn.execute(
+            "UPDATE sessions SET session_context = ?, updated_at = ? WHERE session_id = ?",
+            (json.dumps(context), datetime.now().isoformat(), session_id)
+        )
+
+    # =============================================================================
+    # ADDITIONAL UTILITY METHODS FOR LANGUAGE ANALYTICS
+    # =============================================================================
+
+    def get_session_language_analytics(self, session_id: str) -> Dict[str, Any]:
+        """Get comprehensive language analytics for a session."""
+        
+        session_id = self._sanitize_session_id(session_id)
+        
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                # Get session context
+                session_data = conn.execute(
+                    "SELECT session_context FROM sessions WHERE session_id = ?",
+                    (session_id,)
+                ).fetchone()
+                
+                if not session_data or not session_data[0]:
+                    return {"error": "Session not found"}
+                
+                context = json.loads(session_data[0])
+                
+                # Get conversation turns with language data
+                turns = conn.execute("""
+                    SELECT agent_metadata, timestamp FROM conversation_turns 
+                    WHERE session_id = ? ORDER BY turn_number
+                """, (session_id,)).fetchall()
+                
+                # Analyze language patterns
+                language_timeline = []
+                translation_methods = {}
+                
+                for turn in turns:
+                    if turn[0]:  # agent_metadata exists
+                        try:
+                            metadata = json.loads(turn[0])
+                            lang = metadata.get("language", "en")
+                            
+                            language_timeline.append({
+                                "timestamp": turn[1],
+                                "language": lang,
+                                "processing_method": metadata.get("processing_method", "unknown")
+                            })
+                            
+                            # Track translation methods
+                            if metadata.get("translation_info", {}).get("method"):
+                                method = metadata["translation_info"]["method"]
+                                translation_methods[method] = translation_methods.get(method, 0) + 1
+                        except:
+                            continue
+                
+                return {
+                    "session_id": session_id,
+                    "analytics": context.get("language_analytics", {}),
+                    "language_timeline": language_timeline,
+                    "translation_methods": translation_methods,
+                    "total_turns": len(turns),
+                    "multilingual_turns": len([t for t in language_timeline if t["language"] != "en"])
+                }
+                
+        except Exception as e:
+            session_logger.error("get_session_language_analytics_failed", 
+                            session_id=session_id, error=str(e))
+            return {"error": str(e)}
+
+    def get_global_language_statistics(self) -> Dict[str, Any]:
+        """Get system-wide language usage statistics."""
+        
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                # Language distribution across all sessions
+                language_dist = conn.execute("""
+                    SELECT 
+                        json_extract(agent_metadata, '$.language') as language,
+                        COUNT(*) as turn_count,
+                        json_extract(agent_metadata, '$.processing_method') as method
+                    FROM conversation_turns 
+                    WHERE json_extract(agent_metadata, '$.language') IS NOT NULL
+                    GROUP BY language, method
+                    ORDER BY turn_count DESC
+                """).fetchall()
+                
+                # Translation quality metrics
+                translation_quality = conn.execute("""
+                    SELECT 
+                        json_extract(agent_metadata, '$.translation_info.method') as method,
+                        AVG(CAST(json_extract(agent_metadata, '$.translation_info.confidence') AS FLOAT)) as avg_confidence,
+                        COUNT(*) as usage_count
+                    FROM conversation_turns 
+                    WHERE json_extract(agent_metadata, '$.translation_info.method') IS NOT NULL
+                    GROUP BY method
+                    ORDER BY usage_count DESC
+                """).fetchall()
+                
+                # Recent activity (last 7 days)
+                recent_activity = conn.execute("""
+                    SELECT 
+                        json_extract(agent_metadata, '$.language') as language,
+                        COUNT(*) as recent_turns
+                    FROM conversation_turns 
+                    WHERE json_extract(agent_metadata, '$.language') IS NOT NULL
+                    AND timestamp > datetime('now', '-7 days')
+                    GROUP BY language
+                    ORDER BY recent_turns DESC
+                """).fetchall()
+                
+                return {
+                    "language_distribution": [
+                        {"language": row[0], "turns": row[1], "method": row[2]} 
+                        for row in language_dist
+                    ],
+                    "translation_quality": [
+                        {"method": row[0], "avg_confidence": row[1], "usage": row[2]} 
+                        for row in translation_quality
+                    ],
+                    "recent_activity": [
+                        {"language": row[0], "turns": row[1]} 
+                        for row in recent_activity
+                    ],
+                    "total_multilingual_turns": sum(
+                        row[1] for row in language_dist if row[0] != "en"
+                    ),
+                    "generated_at": datetime.now().isoformat()
+                }
+                
+        except Exception as e:
+            session_logger.error("get_global_language_statistics_failed", error=str(e))
+            return {"error": str(e)}
+
+    def _get_or_create_session_with_language(self, conn, session_id: str, 
+                                        user_language: str, language_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Get existing session or create new one with language support."""
+        
+        current_session = conn.execute(
+            "SELECT turn_count, session_context FROM sessions WHERE session_id = ?",
+            (session_id,)
+        ).fetchone()
+        
+        if not current_session:
+            # Create new session with language context
+            session_context = {
+                "preferred_language": user_language,
+                "language_detection_data": language_info,
+                "created_at": datetime.now().isoformat(),
+                "multilingual_session": user_language != "en"
+            }
+            
+            conn.execute(
+                """INSERT INTO sessions (session_id, session_context, turn_count) 
+                VALUES (?, ?, ?)""",
+                (session_id, json.dumps(session_context), 0)
+            )
+            
+            return {"turn_count": 0, "session_context": session_context}
+        
+        else:
+            # Update existing session with language preference
+            try:
+                existing_context = json.loads(current_session[1]) if current_session[1] else {}
+            except json.JSONDecodeError:
+                existing_context = {}
+            
+            # Smart language preference updating
+            current_lang = existing_context.get("preferred_language", "en")
+            if current_lang != user_language:
+                existing_context.update({
+                    "preferred_language": user_language,
+                    "previous_language": current_lang,
+                    "language_switched_at": datetime.now().isoformat(),
+                    "language_switch_count": existing_context.get("language_switch_count", 0) + 1
+                })
+            
+            existing_context.update({
+                "last_interaction_language": user_language,
+                "language_updated_at": datetime.now().isoformat()
+            })
+            
+            conn.execute(
+                "UPDATE sessions SET session_context = ? WHERE session_id = ?",
+                (json.dumps(existing_context), session_id)
+            )
+            
+            return {"turn_count": current_session[0], "session_context": existing_context}
+
+    def _build_agent_metadata(self, final_state: ImmigrationState, user_language: str,
+                            translation_metadata: Dict[str, Any], turn: ConversationTurn) -> Dict[str, Any]:
+        """Build comprehensive agent metadata for the conversation turn."""
+        
+        synthesis_meta = final_state.get("synthesis_metadata", {})
+        
+        # Core metadata
+        agent_metadata = {
+            "language": user_language,
+            "is_multilingual": user_language != "en",
+            "turn_timestamp": datetime.now().isoformat()
+        }
+        
+        # Translation information
+        if translation_metadata:
+            agent_metadata["translation_info"] = translation_metadata
+        
+        # Synthesis information
+        if synthesis_meta:
+            agent_metadata["synthesis_metadata"] = {
+                "response_type": synthesis_meta.get("response_type"),
+                "tools_executed": synthesis_meta.get("tools_executed", 0),
+                "processing_successful": synthesis_meta.get("processing_successful", True),
+                "multilingual_enabled": synthesis_meta.get("multilingual_enabled", False)
+            }
+        
+        # Tool usage summary
+        if turn.tools_used:
+            agent_metadata["tools_summary"] = {
+                "count": len(turn.tools_used),
+                "tools": turn.tools_used,
+                "multilingual_tools": [t for t in turn.tools_used if "multilingual" in t.lower()]
+            }
+        
+        return agent_metadata
+
     def _update_session_context(self, session_id: str, final_state: ImmigrationState, 
                                conn: sqlite3.Connection = None) -> Dict[str, Any]:
         """
