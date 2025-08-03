@@ -251,6 +251,15 @@ def main():
                     "has_synthesis": True,
                     "correlation_id": correlation_id
                 })
+                
+                # CRITICAL FIX: Actually display the answer to the user
+                print("\n" + "="*60)
+                print("🤖 AskImmigrate 2.0 Response")
+                print("="*60)
+                print(results["synthesis"])
+                print("="*60 + "\n")
+            else:
+                print("❌ No response generated. Please try again.")
             
             # Session summary with enhanced information
             actual_session_id = results.get("session_id")
@@ -301,6 +310,13 @@ def main():
                 "session_id": rag_session_id,
                 "correlation_id": correlation_id
             })
+            
+            # CRITICAL FIX: Actually display the RAG answer to the user
+            print("\n" + "="*60)
+            print("📚 AskImmigrate RAG Response")
+            print("="*60)
+            print(answer)
+            print("="*60 + "\n")
 
     except Exception as e:
         correlation_id = start_request_tracking()
