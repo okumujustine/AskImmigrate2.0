@@ -96,6 +96,7 @@ class SessionQA(BaseModel):
 def get_session_qa(client_fingerprint: Optional[str] = Query(None)):
     """
     Returns a list of sessions with Q&A, filtered by client fingerprint for isolation.
+    SECURITY: Only returns sessions belonging to the requesting client.
     """
     logger.info(f"GET /session-qa - Client fingerprint: {'provided' if client_fingerprint else 'not provided'}")
     
@@ -105,20 +106,24 @@ def get_session_qa(client_fingerprint: Optional[str] = Query(None)):
         sessions = session_manager.list_all_sessions()
         logger.info(f"Retrieved {len(sessions)} total sessions from session manager")
         
-        # Filter sessions by client if fingerprint provided
-        if client_fingerprint:
-            client_hash = create_client_fingerprint_hash(client_fingerprint)
-            filtered_sessions = []
-            
-            for session in sessions:
-                session_id = session["session_id"]
-                session_client_hash = extract_client_from_session_id(session_id)
-                # Include sessions that match this client or legacy sessions (None)
-                if session_client_hash == client_hash or session_client_hash is None:
-                    filtered_sessions.append(session)
-            
-            sessions = filtered_sessions
-            logger.info(f"Filtered to {len(sessions)} sessions for client fingerprint")
+        # SECURITY FIX: Don't return sessions if no fingerprint provided
+        if not client_fingerprint:
+            logger.warning("No client fingerprint provided - returning empty list for security")
+            return []
+        
+        # Filter sessions by client fingerprint
+        client_hash = create_client_fingerprint_hash(client_fingerprint)
+        filtered_sessions = []
+        
+        for session in sessions:
+            session_id = session["session_id"]
+            session_client_hash = extract_client_from_session_id(session_id)
+            # Only include sessions that match this specific client
+            if session_client_hash == client_hash:
+                filtered_sessions.append(session)
+        
+        sessions = filtered_sessions
+        logger.info(f"Filtered to {len(sessions)} sessions for client fingerprint")
         
         # Build response with Q&A data
         grouped = []
@@ -196,6 +201,7 @@ def query_agentic_system(request: QueryRequest):
 def get_session_ids(client_fingerprint: Optional[str] = Query(None)):
     """
     Returns a list of session IDs filtered by client fingerprint for isolation.
+    SECURITY: Only returns sessions belonging to the requesting client.
     """
     logger.info(f"GET /session-ids - Client fingerprint: {'provided' if client_fingerprint else 'not provided'}")
     
@@ -206,10 +212,10 @@ def get_session_ids(client_fingerprint: Optional[str] = Query(None)):
         session_ids = [session["session_id"] for session in sessions]
         logger.info(f"Retrieved {len(session_ids)} total session IDs")
         
-        # If no client fingerprint provided, return all sessions (legacy support)
+        # SECURITY FIX: Don't return sessions if no fingerprint provided
         if not client_fingerprint:
-            logger.info("No client fingerprint provided, returning all sessions (legacy mode)")
-            return session_ids
+            logger.warning("No client fingerprint provided - returning empty list for security")
+            return []
         
         # Filter sessions by client fingerprint
         client_hash = create_client_fingerprint_hash(client_fingerprint)
@@ -217,8 +223,8 @@ def get_session_ids(client_fingerprint: Optional[str] = Query(None)):
         
         for session_id in session_ids:
             session_client_hash = extract_client_from_session_id(session_id)
-            # Include sessions that match this client or legacy sessions (None)
-            if session_client_hash == client_hash or session_client_hash is None:
+            # Only include sessions that match this specific client
+            if session_client_hash == client_hash:
                 filtered_sessions.append(session_id)
         
         logger.info(f"Filtered to {len(filtered_sessions)} sessions for client")
