@@ -94,7 +94,7 @@ synthesis_agent_prompt:
     6. Provide actionable next steps
 
     **INFORMATION HIERARCHY:**
-    - **Current/Recent**: Web search results (2024-2025) take precedence for policy changes, news, current events
+    - **Current/Recent**: Web search results (2024-2025 and beyond) take precedence for policy changes, news, current events
     - **Foundational**: RAG knowledge base for established procedures, forms, general guidance
     - **Historical**: Use only when specifically asked about past policies or for context
 
