@@ -103,8 +103,8 @@ def validate_and_sanitize_input(state: ImmigrationState) -> Dict[str, Any]:
         "validation_warnings": validation_result.warnings
     }
 
-def detect_user_language_sync(user_question: str, session_id: str) -> Dict[str, Any]:
-    """Detect user language synchronously to avoid async issues"""
+def detect_user_language(user_question: str, session_id: str) -> Dict[str, Any]:
+    """Detect user language synchronously"""
     
     if not MULTILINGUAL_AVAILABLE:
         return {
@@ -115,7 +115,6 @@ def detect_user_language_sync(user_question: str, session_id: str) -> Dict[str, 
         }
     
     try:
-        # Simple pattern-based detection to avoid async issues
         question_lower = user_question.lower()
         
         # Spanish detection patterns
@@ -124,19 +123,11 @@ def detect_user_language_sync(user_question: str, session_id: str) -> Dict[str, 
         
         if spanish_score > 0:
             confidence = min(0.6 + (spanish_score * 0.1), 0.95)
-            manager_logger.info(
-                "language_detected_sync",
-                session_id=session_id,
-                language="es",
-                confidence=confidence,
-                patterns_matched=spanish_score
-            )
             return {
                 "language": "es", 
                 "confidence": confidence,
-                "detection_method": "pattern_sync",
-                "requires_translation": True,
-                "patterns_matched": spanish_score
+                "detection_method": "pattern",
+                "requires_translation": True
             }
         
         # French patterns
@@ -144,7 +135,7 @@ def detect_user_language_sync(user_question: str, session_id: str) -> Dict[str, 
             return {
                 "language": "fr",
                 "confidence": 0.7,
-                "detection_method": "pattern_sync", 
+                "detection_method": "pattern", 
                 "requires_translation": True
             }
         
@@ -153,22 +144,15 @@ def detect_user_language_sync(user_question: str, session_id: str) -> Dict[str, 
             return {
                 "language": "pt",
                 "confidence": 0.7,
-                "detection_method": "pattern_sync",
+                "detection_method": "pattern",
                 "requires_translation": True
             }
         
         # Default to English
-        manager_logger.info(
-            "language_detected_sync",
-            session_id=session_id,
-            language="en",
-            confidence=0.9
-        )
-        
         return {
             "language": "en",
             "confidence": 0.9,
-            "detection_method": "pattern_sync_default",
+            "detection_method": "default",
             "requires_translation": False
         }
         
@@ -185,14 +169,13 @@ def detect_user_language_sync(user_question: str, session_id: str) -> Dict[str, 
 def build_session_aware_prompt(user_question: str, state: ImmigrationState, 
                               language_info: Optional[Dict[str, Any]] = None) -> str:
     """
-    Enhanced prompt building with language awareness
+    Build prompt with session context and language awareness
     """
     base_prompt = build_prompt_from_config(
         config=prompt_config["manager_agent_prompt"], 
         input_data=user_question
     )
     
-    # Simple, clean conversation context
     conversation_context = ""
     if state.get("conversation_history"):
         conversation_context = "CONVERSATION SO FAR:\n"
@@ -216,7 +199,7 @@ LANGUAGE CONTEXT:
 
 def manager_node(state: ImmigrationState) -> Dict[str, Any]:
     """
-    Enhanced manager node with comprehensive validation, retry logic, error handling, and multilingual support.
+    Manager node with validation, retry logic, error handling, and multilingual support.
     
     Args:
         state: Immigration state with user input
@@ -227,7 +210,7 @@ def manager_node(state: ImmigrationState) -> Dict[str, Any]:
     session_id = state.get("session_id")
     
     manager_logger.info(
-        "enhanced_manager_analysis_started",
+        "manager_analysis_started",
         session_id=session_id,
         has_history=bool(state.get("conversation_history"))
     )
@@ -252,8 +235,8 @@ def manager_node(state: ImmigrationState) -> Dict[str, Any]:
         sanitized_state = validation_result["sanitized_state"]
         user_question = sanitized_state.get("text", "")
         
-        # Step 2: Language Detection
-        language_info = detect_user_language_sync(user_question, session_id)
+        # Step 2: Language Detection (NEW)
+        language_info = detect_user_language(user_question, session_id)
         
         # Step 3: Get ALL tools (manager orchestrates so needs access to everything)
         tools = get_all_tools()
@@ -269,7 +252,7 @@ def manager_node(state: ImmigrationState) -> Dict[str, Any]:
             session_id=session_id
         )
         
-        # Step 4: Build prompt with session and language awareness
+        # Step 4: Build prompt with session and language awareness (UPDATED)
         with PerformanceTimer(manager_logger, "prompt_building", session_id=session_id):
             prompt = build_session_aware_prompt(user_question, sanitized_state, language_info)
         
@@ -297,7 +280,7 @@ def manager_node(state: ImmigrationState) -> Dict[str, Any]:
                 "tools_used": [],
                 "rag_response": "",
                 "workflow_parameters": {"question_type": "llm_error"},
-                "language_info": language_info
+                "language_info": language_info  # NEW
             }
         
         # Step 6: Execute tools if LLM requested them
@@ -391,7 +374,7 @@ def manager_node(state: ImmigrationState) -> Dict[str, Any]:
                         "error_type": "configuration_error"
                     }
         
-        # Step 7: Create strategic analysis with language information
+        # Step 7: Create strategic analysis with language information (UPDATED)
         strategic_decision = response.content or "Analysis completed."
         
         structured_analysis = {
@@ -400,12 +383,12 @@ def manager_node(state: ImmigrationState) -> Dict[str, Any]:
             "session_aware": bool(sanitized_state.get("conversation_history")),
             "complexity": "complex" if len(tool_calls) > 1 else "simple",
             "analysis_confidence": "high" if tool_calls else "medium",
-            "user_language": language_info["language"],
-            "language_confidence": language_info["confidence"],
-            "requires_translation": language_info["requires_translation"]
+            "user_language": language_info["language"],  # NEW
+            "language_confidence": language_info["confidence"],  # NEW
+            "requires_translation": language_info["requires_translation"]  # NEW
         }
         
-        # Step 8: Compile final results with language information
+        # Step 8: Compile final results with language information (UPDATED)
         final_result = {
             "manager_decision": strategic_decision,
             "structured_analysis": structured_analysis,
@@ -418,13 +401,13 @@ def manager_node(state: ImmigrationState) -> Dict[str, Any]:
         }
         
         manager_logger.info(
-            "enhanced_manager_analysis_completed",
+            "manager_analysis_completed",
             decision_length=len(final_result["manager_decision"]),
             tools_used_count=len(final_result["tools_used"]),
             successful_tools=sum(1 for result in final_result["tool_results"].values() if "error" not in result),
-            user_language=language_info["language"],
-            language_detection_confidence=language_info["confidence"],
-            requires_translation=language_info["requires_translation"],
+            user_language=language_info["language"],  # NEW
+            language_detection_confidence=language_info["confidence"],  # NEW
+            requires_translation=language_info["requires_translation"],  # NEW
             session_id=session_id
         )
         
@@ -432,19 +415,19 @@ def manager_node(state: ImmigrationState) -> Dict[str, Any]:
         
     except Exception as e:
         manager_logger.error(
-            "enhanced_manager_analysis_failed",
+            "manager_analysis_failed",
             error_type=type(e).__name__,
             error_message=str(e),
             session_id=session_id
         )
         
         return {
-            "manager_decision": f"Enhanced analysis failed: {str(e)}",
+            "manager_decision": f"Analysis failed: {str(e)}",
             "structured_analysis": {"question_type": "system_error"},
             "tool_results": {},
             "tools_used": [],
             "rag_response": "",
             "workflow_parameters": {"question_type": "system_error"},
             "system_error": str(e),
-            "language_info": {"language": "en", "error": True}
+            "language_info": {"language": "en", "error": True}  # NEW
         }

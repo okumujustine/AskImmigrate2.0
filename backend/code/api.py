@@ -299,15 +299,28 @@ def health_check():
             "timestamp": datetime.now().isoformat(),
             "error": str(e)
         }
-    
+
+
+# MULTILINGUAL SUPPORT - Essential endpoints only
+def get_translation_service():
+    """Helper function to get translation service with proper error handling"""
+    try:
+        from backend.code.multilingual.translation_service import translation_service
+        return translation_service, True
+    except ImportError:
+        logger.warning("Translation service not available")
+        return None, False
+    except Exception as e:
+        logger.error(f"Error importing translation service: {e}")
+        return None, False
+
+
 class MultilingualQueryRequest(BaseModel):
     question: str
     language: str = "auto"  # "auto", "en", "es", "fr", "pt"
     session_id: Optional[str] = None
     client_fingerprint: Optional[str] = None
 
-class LanguageDetectionRequest(BaseModel):
-    text: str
 
 class MultilingualResponse(BaseModel):
     answer: str
@@ -315,53 +328,20 @@ class MultilingualResponse(BaseModel):
     language: str
     metadata: Dict[str, Any]
 
-def get_language_capabilities():
-    """Get supported languages with their capabilities"""
-    return [
-        {
-            "code": "en",
-            "name": "English", 
-            "native_name": "English",
-            "native_llm": True,
-            "translation_available": True
-        },
-        {
-            "code": "es",
-            "name": "Spanish",
-            "native_name": "Español", 
-            "native_llm": True,
-            "translation_available": True
-        },
-        {
-            "code": "fr",
-            "name": "French",
-            "native_name": "Français",
-            "native_llm": False,
-            "translation_available": True
-        },
-        {
-            "code": "pt", 
-            "name": "Portuguese",
-            "native_name": "Português",
-            "native_llm": False,
-            "translation_available": True
-        }
-    ]
 
 supported_languages = ["en", "es", "fr", "pt"]
 
+
 @app.post("/api/chat/multilingual", response_model=MultilingualResponse)
 async def multilingual_chat(request: MultilingualQueryRequest):
-    """Enhanced chat endpoint with comprehensive multilingual support and error handling"""
+    """Chat endpoint with multilingual support"""
     logger.info(f"Multilingual chat request: language={request.language}, question_length={len(request.question)}")
     
     try:
-        # Import translation service with error handling
         translation_service, is_available = get_translation_service()
         
         if not is_available:
             logger.warning("Translation service not available, falling back to English")
-            # Fall back to regular English processing
             from backend.code.graph_workflow import run_agentic_askimmigrate
             from backend.code.utils import create_anonymous_session_id
             
@@ -376,9 +356,8 @@ async def multilingual_chat(request: MultilingualQueryRequest):
                 session_id=session_id,
                 language="en",
                 metadata={
-                    "translation_method": "multilingual_service_unavailable",
-                    "fallback_used": True,
-                    "error": "Translation service not available"
+                    "translation_method": "service_unavailable",
+                    "fallback_used": True
                 }
             )
         
@@ -394,7 +373,7 @@ async def multilingual_chat(request: MultilingualQueryRequest):
                     "confidence": detection_result.confidence,
                     "method": detection_result.detection_method
                 }
-                logger.info(f"Language auto-detected: {detected_language} (confidence: {detection_result.confidence})")
+                logger.info(f"Language auto-detected: {detected_language}")
             except Exception as e:
                 logger.warning(f"Language detection failed: {e}, defaulting to English")
                 detected_language = "en"
@@ -412,14 +391,9 @@ async def multilingual_chat(request: MultilingualQueryRequest):
             request.client_fingerprint, request.question
         )
         
-        # Process the question through the main workflow with language context
+        # Process the question through the main workflow
         from backend.code.graph_workflow import run_agentic_askimmigrate
-        
-        # Add language information to the state for proper processing
-        result = run_agentic_askimmigrate(
-            text=request.question, 
-            session_id=session_id
-        )
+        result = run_agentic_askimmigrate(text=request.question, session_id=session_id)
         
         # Get the final answer
         answer = result.get("synthesis", "")
@@ -437,9 +411,8 @@ async def multilingual_chat(request: MultilingualQueryRequest):
                 logger.info(f"Processing multilingual response for language: {detected_language}")
                 
                 if detected_language == "es":
-                    # Try native Spanish response first (best quality)
+                    # Try native Spanish response first
                     try:
-                        logger.info("Attempting native Spanish response generation")
                         native_result = await translation_service.get_native_response(
                             request.question, "es"
                         )
@@ -447,7 +420,6 @@ async def multilingual_chat(request: MultilingualQueryRequest):
                         translation_metadata = {
                             "method": native_result.translation_method,
                             "confidence": native_result.confidence,
-                            "processing_time": native_result.processing_time,
                             "native_response": True
                         }
                         logger.info("Native Spanish response generated successfully")
@@ -466,11 +438,9 @@ async def multilingual_chat(request: MultilingualQueryRequest):
                         translation_metadata = {
                             "method": translation_result.translation_method,
                             "confidence": translation_result.confidence,
-                            "processing_time": translation_result.processing_time,
                             "translated_from": "en",
                             "fallback_from_native": True
                         }
-                        logger.info("Fallback translation to Spanish completed")
                 
                 else:
                     # For other languages, translate the English response
@@ -485,10 +455,8 @@ async def multilingual_chat(request: MultilingualQueryRequest):
                     translation_metadata = {
                         "method": translation_result.translation_method,
                         "confidence": translation_result.confidence,
-                        "processing_time": translation_result.processing_time,
                         "translated_from": "en"
                     }
-                    logger.info(f"Translation to {detected_language} completed")
                 
             except Exception as translation_error:
                 logger.error(f"Multilingual processing failed: {translation_error}, using English response")
@@ -507,11 +475,10 @@ async def multilingual_chat(request: MultilingualQueryRequest):
             "target_language": detected_language,
             "original_language_request": request.language,
             "session_id": session_id,
-            "multilingual_processing": detected_language != "en",
-            "service_health": translation_service.get_stats().get("service_health", "unknown") if translation_service else "unavailable"
+            "multilingual_processing": detected_language != "en"
         }
         
-        logger.info(f"Multilingual chat completed successfully: {detected_language}, method: {translation_metadata.get('method')}")
+        logger.info(f"Multilingual chat completed successfully: {detected_language}")
         
         return MultilingualResponse(
             answer=final_answer,
@@ -523,13 +490,8 @@ async def multilingual_chat(request: MultilingualQueryRequest):
     except Exception as e:
         logger.error(f"Multilingual chat error: {e}", exc_info=True)
         
-        # Create error response in requested language if possible
-        error_message = str(e)
-        if hasattr(request, 'language') and request.language == "es":
-            error_message = f"Error procesando su consulta: {error_message}"
-        
         return MultilingualResponse(
-            answer=f"I apologize, but I encountered an error processing your multilingual request: {error_message}",
+            answer=f"I apologize, but I encountered an error processing your request: {str(e)}",
             session_id=request.session_id or "error-session",
             language="en",
             metadata={
@@ -540,9 +502,14 @@ async def multilingual_chat(request: MultilingualQueryRequest):
             }
         )
 
+
+class LanguageDetectionRequest(BaseModel):
+    text: str
+
+
 @app.post("/api/detect-language")
 async def detect_language(request: LanguageDetectionRequest):
-    """Enhanced language detection endpoint with comprehensive error handling"""
+    """Language detection endpoint"""
     logger.info(f"Language detection request: text_length={len(request.text)}")
     
     try:
@@ -561,39 +528,24 @@ async def detect_language(request: LanguageDetectionRequest):
             except Exception as service_error:
                 logger.warning(f"Translation service detection failed: {service_error}, using fallback")
         
-        # Fallback pattern detection with enhanced patterns
+        # Fallback pattern detection
         logger.info("Using pattern-based language detection fallback")
         
         text_lower = request.text.lower()
-        confidence = 0.5  # Lower confidence for pattern detection
         
-        # Enhanced Spanish detection
-        spanish_patterns = [
-            # Characters
-            'ñ', '¿', '¡',
-            # Common words
-            'inmigración', 'visa', 'español', 'cómo', 'qué', 'cuándo', 'dónde',
-            'necesito', 'quiero', 'puedo', 'solicitar', 'formulario',
-            # Immigration specific
-            'uscis', 'tarjeta verde', 'ciudadanía', 'residencia'
-        ]
-        
+        # Spanish detection
+        spanish_patterns = ['ñ', '¿', '¡', 'inmigración', 'visa', 'español', 'cómo', 'qué', 'necesito', 'quiero']
         spanish_score = sum(1 for pattern in spanish_patterns if pattern in text_lower)
+        
         if spanish_score > 0:
             detected_lang = "es"
             confidence = min(0.3 + (spanish_score * 0.1), 0.8)
-        
-        # Enhanced French detection
-        elif any(pattern in text_lower for pattern in ['ç', 'où', 'français', 'immigration', 'visa français']):
+        elif any(pattern in text_lower for pattern in ['ç', 'où', 'français', 'immigration']):
             detected_lang = "fr"
             confidence = 0.6
-        
-        # Enhanced Portuguese detection
         elif any(pattern in text_lower for pattern in ['ção', 'português', 'imigração']):
             detected_lang = "pt"
             confidence = 0.6
-        
-        # Default to English
         else:
             detected_lang = "en"
             confidence = 0.7
@@ -602,9 +554,8 @@ async def detect_language(request: LanguageDetectionRequest):
             "language": detected_lang,
             "confidence": confidence,
             "supported": detected_lang in supported_languages,
-            "detection_method": "enhanced_pattern_fallback",
-            "service_available": False,
-            "patterns_matched": spanish_score if detected_lang == "es" else 0
+            "detection_method": "pattern_fallback",
+            "service_available": False
         }
         
     except Exception as e:
@@ -618,15 +569,15 @@ async def detect_language(request: LanguageDetectionRequest):
             "error": str(e)
         }
 
+
 @app.get("/api/languages/supported")
 async def get_supported_languages():
-    """Enhanced supported languages endpoint with real-time service status"""
+    """Get supported languages endpoint"""
     logger.info("Supported languages request")
     
     try:
         translation_service, is_available = get_translation_service()
         
-        # Enhanced capabilities with real-time status
         capabilities = [
             {
                 "code": "en",
@@ -642,8 +593,7 @@ async def get_supported_languages():
                 "native_name": "Español", 
                 "native_llm": is_available,
                 "translation_available": is_available,
-                "quality": "native" if is_available else "unavailable",
-                "features": ["native_generation", "contextual_translation"] if is_available else []
+                "quality": "native" if is_available else "unavailable"
             },
             {
                 "code": "fr",
@@ -663,35 +613,15 @@ async def get_supported_languages():
             }
         ]
         
-        response_data = {
+        return {
             "supported_languages": capabilities,
             "multilingual_enabled": is_available,
             "service_status": "available" if is_available else "unavailable"
         }
-        
-        # Add service statistics if available
-        if is_available and translation_service:
-            try:
-                stats = translation_service.get_stats()
-                response_data["service_stats"] = {
-                    "total_operations": stats.get("total_operations", 0),
-                    "cache_hit_rate": round(stats.get("cache_hit_rate", 0), 2),
-                    "error_rate": round(stats.get("error_rate", 0), 2),
-                    "service_health": stats.get("service_health", "unknown"),
-                    "has_google_translate": stats.get("has_google", False),
-                    "has_redis_cache": stats.get("has_redis", False),
-                    "has_openai": stats.get("has_openai", False)
-                }
-            except Exception as stats_error:
-                logger.warning(f"Could not get service stats: {stats_error}")
-                response_data["service_stats"] = {"error": "stats_unavailable"}
-        
-        return response_data
             
     except Exception as e:
         logger.error(f"Error getting supported languages: {e}")
         
-        # Return basic fallback response
         return {
             "supported_languages": [
                 {
@@ -707,68 +637,3 @@ async def get_supported_languages():
             "service_status": "error",
             "error": str(e)
         }
-
-# Add health check endpoint for multilingual services
-@app.get("/api/multilingual/health")
-async def multilingual_health_check():
-    """Health check specifically for multilingual services"""
-    logger.info("Multilingual health check requested")
-    
-    try:
-        translation_service, is_available = get_translation_service()
-        
-        if not is_available:
-            return {
-                "status": "unavailable",
-                "service_available": False,
-                "timestamp": datetime.now().isoformat(),
-                "error": "Translation service not available"
-            }
-        
-        # Perform comprehensive health check
-        health_results = await translation_service.health_check()
-        stats = translation_service.get_stats()
-        
-        return {
-            "status": health_results["overall_status"],
-            "service_available": True,
-            "timestamp": datetime.now().isoformat(),
-            "health_details": health_results,
-            "performance_stats": {
-                "total_operations": stats.get("total_operations", 0),
-                "cache_hit_rate": round(stats.get("cache_hit_rate", 0), 2),
-                "error_rate": round(stats.get("error_rate", 0), 2),
-                "service_health": stats.get("service_health", "unknown")
-            },
-            "capabilities": {
-                "openai_available": health_results["openai"],
-                "google_translate_available": health_results["google_translate"],
-                "redis_cache_available": health_results["redis_cache"],
-                "native_spanish": health_results["openai"],
-                "translation_fallbacks": health_results["openai"] or health_results["google_translate"]
-            }
-        }
-        
-    except Exception as e:
-        logger.error(f"Multilingual health check failed: {e}")
-        return {
-            "status": "error",
-            "service_available": False,
-            "timestamp": datetime.now().isoformat(),
-            "error": str(e)
-        }
-
-# Also add this import at the top of your api.py file for better organization:
-# (Add this after your existing imports)
-
-def get_translation_service():
-    """Helper function to get translation service with proper error handling"""
-    try:
-        from backend.code.multilingual.translation_service import translation_service
-        return translation_service, True
-    except ImportError:
-        logger.warning("Translation service not available")
-        return None, False
-    except Exception as e:
-        logger.error(f"Error importing translation service: {e}")
-        return None, False

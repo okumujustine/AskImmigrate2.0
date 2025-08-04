@@ -263,19 +263,18 @@ def save_conversation_result(final_state: ImmigrationState) -> None:
     
     user_question = final_state.get("text", "")
     synthesis_response = final_state.get("synthesis", "")
-    language_info = final_state.get("language_info", {})
+    language_info = final_state.get("language_info", {})  # MULTILINGUAL: Extract language info
     
     workflow_logger.info(
-        "conversation_save_attempt_enhanced",
+        "conversation_save_attempt",
         session_id=session_id,
         question_preview=user_question[:50] if user_question else "",
         response_length=len(synthesis_response),
-        user_language=language_info.get("language", "en"),
-        has_translation_info=bool(final_state.get("synthesis_metadata", {}).get("translation_info"))
+        user_language=language_info.get("language", "en")  # MULTILINGUAL: Log user language
     )
 
     
-    # Enhanced data validation
+    # data validation
     validation_errors = []
     
     if not user_question:
@@ -284,7 +283,7 @@ def save_conversation_result(final_state: ImmigrationState) -> None:
     if not synthesis_response or len(synthesis_response.strip()) < 10:
         validation_errors.append("Response too short or empty")
     
-    # Validate language info if present
+    # MULTILINGUAL: Validate language info if present
     if language_info:
         if not isinstance(language_info.get("language"), str):
             validation_errors.append("Invalid language code")
@@ -302,8 +301,8 @@ def save_conversation_result(final_state: ImmigrationState) -> None:
         return
 
     try:
-        with PerformanceTimer(workflow_logger, "conversation_save_enhanced", session_id=session_id):
-            # Create comprehensive conversation turn
+        with PerformanceTimer(workflow_logger, "conversation_save", session_id=session_id):
+            # Create conversation turn
             turn = ConversationTurn(
                 question=user_question,
                 answer=synthesis_response,
@@ -313,7 +312,7 @@ def save_conversation_result(final_state: ImmigrationState) -> None:
                 tools_used=final_state.get("tools_used", [])
             )
             
-            # UNIFIED SAVE: Single method handles all languages intelligently
+            # MULTILINGUAL: Pass language_info to session manager
             session_manager.save_conversation_turn(
                 session_id=session_id,
                 turn=turn,
@@ -322,24 +321,20 @@ def save_conversation_result(final_state: ImmigrationState) -> None:
             )
             
             workflow_logger.info(
-                "conversation_save_successful_enhanced",
+                "conversation_save_successful",
                 session_id=session_id,
-                user_language=language_info.get("language", "en"),
-                is_multilingual=language_info.get("language", "en") != "en",
+                user_language=language_info.get("language", "en"),  # MULTILINGUAL: Log language
                 turn_length=len(synthesis_response),
                 tools_used_count=len(final_state.get("tools_used", []))
             )
             
     except Exception as e:
         workflow_logger.error(
-            "conversation_save_failed_enhanced",
+            "conversation_save_failed",
             session_id=session_id,
             error_type=type(e).__name__,
             error_message=str(e),
-            user_language=language_info.get("language", "en"),
-            question_length=len(user_question),
-            response_length=len(synthesis_response),
-            has_language_info=bool(language_info)
+            user_language=language_info.get("language", "en")  # MULTILINGUAL: Log language in error
         )
         
         # Optional: Attempt fallback save without language info
