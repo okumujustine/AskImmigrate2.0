@@ -5,7 +5,6 @@ from backend.code.utils import load_config
 from backend.code.prompt_builder import build_prompt_from_config
 from backend.code.agentic_state import ImmigrationState
 from backend.code.tools.tool_registry import get_all_tools
-from backend.code.multilingual.translation_service import translation_service, SupportedLanguage
 from backend.code.structured_logging import manager_logger, PerformanceTimer
 from backend.code.input_validation import validate_immigration_query, check_rate_limit
 from backend.code.retry_logic import (
@@ -104,8 +103,8 @@ def validate_and_sanitize_input(state: ImmigrationState) -> Dict[str, Any]:
         "validation_warnings": validation_result.warnings
     }
 
-async def detect_user_language(user_question: str, session_id: str) -> Dict[str, Any]:
-    """Detect user language and return language info"""
+def detect_user_language_sync(user_question: str, session_id: str) -> Dict[str, Any]:
+    """Detect user language synchronously to avoid async issues"""
     
     if not MULTILINGUAL_AVAILABLE:
         return {
@@ -116,37 +115,61 @@ async def detect_user_language(user_question: str, session_id: str) -> Dict[str,
         }
     
     try:
-        detection_result = await translation_service.detect_language(user_question)
+        # Simple pattern-based detection to avoid async issues
+        question_lower = user_question.lower()
         
-        # Validate language support
-        is_supported = detection_result.language in [lang.value for lang in SupportedLanguage]
+        # Spanish detection patterns
+        spanish_patterns = ['¿', '¡', 'ñ', 'inmigración', 'visa', 'cómo', 'qué', 'cuándo', 'dónde']
+        spanish_score = sum(1 for pattern in spanish_patterns if pattern in question_lower)
         
-        if not is_supported:
+        if spanish_score > 0:
+            confidence = min(0.6 + (spanish_score * 0.1), 0.95)
             manager_logger.info(
-                "unsupported_language_fallback",
+                "language_detected_sync",
                 session_id=session_id,
-                detected_language=detection_result.language
+                language="es",
+                confidence=confidence,
+                patterns_matched=spanish_score
             )
             return {
-                "language": "en",
-                "confidence": 0.5,
-                "detection_method": "fallback_unsupported",
-                "requires_translation": False,
-                "original_detected": detection_result.language
+                "language": "es", 
+                "confidence": confidence,
+                "detection_method": "pattern_sync",
+                "requires_translation": True,
+                "patterns_matched": spanish_score
             }
         
+        # French patterns
+        if any(pattern in question_lower for pattern in ['ç', 'où', 'français']):
+            return {
+                "language": "fr",
+                "confidence": 0.7,
+                "detection_method": "pattern_sync", 
+                "requires_translation": True
+            }
+        
+        # Portuguese patterns
+        if any(pattern in question_lower for pattern in ['ção', 'português', 'imigração']):
+            return {
+                "language": "pt",
+                "confidence": 0.7,
+                "detection_method": "pattern_sync",
+                "requires_translation": True
+            }
+        
+        # Default to English
         manager_logger.info(
-            "language_detected",
+            "language_detected_sync",
             session_id=session_id,
-            language=detection_result.language,
-            confidence=detection_result.confidence
+            language="en",
+            confidence=0.9
         )
         
         return {
-            "language": detection_result.language,
-            "confidence": detection_result.confidence,
-            "detection_method": detection_result.detection_method,
-            "requires_translation": detection_result.language != "en"
+            "language": "en",
+            "confidence": 0.9,
+            "detection_method": "pattern_sync_default",
+            "requires_translation": False
         }
         
     except Exception as e:
@@ -230,16 +253,7 @@ def manager_node(state: ImmigrationState) -> Dict[str, Any]:
         user_question = sanitized_state.get("text", "")
         
         # Step 2: Language Detection
-        try:
-            language_info = asyncio.run(detect_user_language(user_question, session_id))
-        except Exception as e:
-            manager_logger.warning(f"Language detection failed: {e}")
-            language_info = {
-                "language": "en",
-                "confidence": 1.0,
-                "detection_method": "fallback",
-                "requires_translation": False
-            }
+        language_info = detect_user_language_sync(user_question, session_id)
         
         # Step 3: Get ALL tools (manager orchestrates so needs access to everything)
         tools = get_all_tools()

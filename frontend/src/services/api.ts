@@ -1,9 +1,25 @@
 import type { Message } from '../types/chat';
 import { mockAskQuestion } from './mockApi';
 import { getPersistentBrowserFingerprint } from './browserFingerprint';
+import { multilingualService } from './multilingualService';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8088';
 const USE_MOCK_API = false; // Set to true to use mock API instead of real API
+
+interface MultilingualResponse {
+  answer: string;
+  session_id: string;
+  language: string;
+  metadata: {
+    translation_method?: string;
+    confidence?: number;
+    processing_time?: number;
+    target_language?: string;
+    multilingual_processing?: boolean;
+    service_health?: string;
+    [key: string]: any;
+  };
+}
 
 // Helper function to clean answers by removing question prefixes
 const cleanAnswer = (answer: string, question: string): string => {
@@ -26,6 +42,8 @@ const cleanAnswer = (answer: string, question: string): string => {
     if (line.match(/^Your Question:/i) || 
         line.match(/^Question:/i) || 
         line.match(/^Q:/i) ||
+        line.match(/^Su Pregunta:/i) ||
+        line.match(/^Pregunta:/i) ||
         line.includes(question)) {
       startIndex = i + 1;
       continue;
@@ -45,63 +63,155 @@ const cleanAnswer = (answer: string, question: string): string => {
   return cleaned;
 };
 
+// Auto-detect language from user input
+const detectQuestionLanguage = async (question: string): Promise<string> => {
+  try {
+    const detection = await multilingualService.detectLanguage(question);
+    if (detection.supported && detection.confidence > 0.6) {
+      return detection.language;
+    }
+  } catch (error) {
+    console.warn('Language detection failed:', error);
+  }
+  
+  // Fallback to current UI language
+  return multilingualService.getCurrentLanguage();
+};
+
 export const askQuestion = async (
   question: string,
   userId: string,
   chatSessionId?: string
-): Promise<{ message: Message; sessionId: string }> => {
+): Promise<{ message: Message; sessionId: string; language?: string; metadata?: any }> => {
   if (USE_MOCK_API) {
-    return mockAskQuestion(question, userId, chatSessionId);
+    const result = await mockAskQuestion(question, userId, chatSessionId);
+    return { ...result, language: 'en' };
   }
 
   try {
     // Get client fingerprint for session isolation
     const clientFingerprint = getPersistentBrowserFingerprint();
     
-    const requestBody: { 
-      question: string; 
-      session_id?: string;
-      client_fingerprint: string;
-    } = {
-      question,
-      client_fingerprint: clientFingerprint,
-    };
-
-    // Include session_id if we have one
-    if (chatSessionId) {
-      requestBody.session_id = chatSessionId;
-    }
-
-    const response = await fetch(`${API_BASE_URL}/query`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to get response from API');
-    }
-
-    const data: { answer: string; session_id: string } = await response.json();
+    // Detect question language or use current UI language
+    const questionLanguage = await detectQuestionLanguage(question);
     
-    // Create message from the API response
-    const message: Message = {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-      question: question,
-      answer: cleanAnswer(data.answer, question),
-      timestamp: new Date(),
-    };
-
-    return {
-      message,
-      sessionId: data.session_id,
-    };
+    // Determine if we should use multilingual endpoint
+    const useMultilingual = questionLanguage !== 'en' || multilingualService.getCurrentLanguage() !== 'en';
+    
+    if (useMultilingual) {
+      // Use multilingual endpoint
+      return await askQuestionMultilingual(question, userId, chatSessionId, questionLanguage, clientFingerprint);
+    } else {
+      // Use standard endpoint for English
+      return await askQuestionStandard(question, userId, chatSessionId, clientFingerprint);
+    }
+    
   } catch (error) {
     console.error('Error asking question:', error);
     throw error;
   }
+};
+
+// Standard English API call
+const askQuestionStandard = async (
+  question: string,
+  userId: string,
+  chatSessionId: string | undefined,
+  clientFingerprint: string
+): Promise<{ message: Message; sessionId: string; language: string }> => {
+  const requestBody: { 
+    question: string; 
+    session_id?: string;
+    client_fingerprint: string;
+  } = {
+    question,
+    client_fingerprint: clientFingerprint,
+  };
+
+  if (chatSessionId) {
+    requestBody.session_id = chatSessionId;
+  }
+
+  const response = await fetch(`${API_BASE_URL}/query`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to get response from API');
+  }
+
+  const data: { answer: string; session_id: string } = await response.json();
+  
+  const message: Message = {
+    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+    question: question,
+    answer: cleanAnswer(data.answer, question),
+    timestamp: new Date(),
+  };
+
+  return {
+    message,
+    sessionId: data.session_id,
+    language: 'en'
+  };
+};
+
+// Multilingual API call
+const askQuestionMultilingual = async (
+  question: string,
+  userId: string,
+  chatSessionId: string | undefined,
+  detectedLanguage: string,
+  clientFingerprint: string
+): Promise<{ message: Message; sessionId: string; language: string; metadata: any }> => {
+  const requestBody = {
+    question,
+    language: detectedLanguage === 'auto' ? 'auto' : detectedLanguage,
+    session_id: chatSessionId,
+    client_fingerprint: clientFingerprint,
+  };
+
+  console.log('Making multilingual request:', { language: detectedLanguage, question: question.substring(0, 50) });
+
+  const response = await fetch(`${API_BASE_URL}/api/chat/multilingual`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Multilingual API error:', errorText);
+    throw new Error(`Multilingual API failed: ${response.status}`);
+  }
+
+  const data: MultilingualResponse = await response.json();
+  
+  console.log('Multilingual response received:', {
+    language: data.language,
+    method: data.metadata.translation_method,
+    answerLength: data.answer.length
+  });
+  
+  const message: Message = {
+    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+    question: question,
+    answer: cleanAnswer(data.answer, question),
+    timestamp: new Date(),
+  };
+
+  return {
+    message,
+    sessionId: data.session_id,
+    language: data.language,
+    metadata: data.metadata
+  };
 };
 
 // Function to get session messages from your API
@@ -110,7 +220,6 @@ export const getSessionMessages = async (
   sessionId: string
 ): Promise<Message[]> => {
   if (USE_MOCK_API) {
-    // For mock, return empty array - messages are added as user interacts
     return [];
   }
 
@@ -122,7 +231,6 @@ export const getSessionMessages = async (
 
     const data: Array<{ question: string; answer: string }> = await response.json();
     
-    // Convert the API response to Message format
     return data.map((msg, index) => ({
       id: `${sessionId}-${index}-${Date.now()}`,
       question: msg.question,
@@ -137,15 +245,12 @@ export const getSessionMessages = async (
 
 export const getChatSessions = async (userId: string) => {
   if (USE_MOCK_API) {
-    // Return empty array for mock - sessions will be created as user interacts
     return [];
   }
 
   try {
-    // Get client fingerprint for session filtering
     const clientFingerprint = getPersistentBrowserFingerprint();
     
-    // Include client fingerprint as query parameter for session filtering
     const url = new URL(`${API_BASE_URL}/session-ids`);
     url.searchParams.append('client_fingerprint', clientFingerprint);
     
@@ -192,7 +297,6 @@ export const createNewChatSession = async (userId: string) => {
   }
 
   // For our API, new sessions are created automatically when sending the first message
-  // Generate a temporary session ID that includes client fingerprint for consistency
   const clientFingerprint = getPersistentBrowserFingerprint();
   const tempSessionId = `new-${clientFingerprint.split('-')[0]}-${Date.now()}`;
   
@@ -201,5 +305,33 @@ export const createNewChatSession = async (userId: string) => {
     userId,
     title: 'New Chat',
     createdAt: new Date().toISOString(),
+  };
+};
+
+// Health check for multilingual services
+export const checkMultilingualHealth = async (): Promise<{
+  available: boolean;
+  languages: string[];
+  status: string;
+}> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/multilingual/health`);
+    if (response.ok) {
+      const health = await response.json();
+      return {
+        available: true, // Always show UI language selector
+        languages: health.capabilities ? Object.keys(health.capabilities).filter(k => health.capabilities[k]) : ['en', 'es'],
+        status: health.status
+      };
+    }
+  } catch (error) {
+    console.warn('Multilingual health check failed:', error);
+  }
+  
+  // Always return true for UI language selection, even if backend is unavailable
+  return {
+    available: true, // UI language selector always available
+    languages: ['en', 'es', 'fr', 'pt'],
+    status: 'ui_only'
   };
 };

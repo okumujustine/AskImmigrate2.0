@@ -1,7 +1,13 @@
-import { Bot, Loader2 } from 'lucide-react';
-import React from 'react';
+import { Bot, Loader2 } from "lucide-react";
+import React from "react";
 
-export const LoadingMessage: React.FC = () => {
+interface LoadingMessageProps {
+  uiStrings: Record<string, string>;
+}
+
+export const LoadingMessage: React.FC<LoadingMessageProps> = ({
+  uiStrings,
+}) => {
   return (
     <div className="conversation-container">
       <div className="message ai-message">
@@ -11,7 +17,7 @@ export const LoadingMessage: React.FC = () => {
         <div className="message-content">
           <div className="loading-content">
             <Loader2 className="spinner" size={16} />
-            <span>Thinking...</span>
+            <span>{uiStrings.thinking}</span>
           </div>
         </div>
       </div>

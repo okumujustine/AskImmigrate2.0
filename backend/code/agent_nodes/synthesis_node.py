@@ -87,15 +87,10 @@ async def generate_multilingual_response(user_question: str, language_info: Dict
             "fallback_used": True
         }
     
-async def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
+def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
     """
-    Enhanced Strategic Synthesis Agent that executes manager tool recommendations.
-    
-    STRATEGIC APPROACH:
-    - Reads manager's tool recommendations from analysis
-    - Executes recommended tools (web_search, fee_calculator) as needed
-    - Combines tool results with RAG context and conversation history
-    - Creates comprehensive responses based on strategic guidance
+    Enhanced Strategic Synthesis Agent with proper multilingual support.
+    Fixed async/sync issues and improved language handling.
     """
     
     if state.get("synthesis_approved", False):
@@ -105,7 +100,7 @@ async def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
     session_id = state.get("session_id", "")
     user_question = state.get("text", "")
     
-    # IMPROVEMENT: Validate inputs early
+    # Validate inputs early
     if not user_question or len(user_question.strip()) < 3:
         synthesis_logger.warning("invalid_user_question", session_id=session_id, question_length=len(user_question))
         return create_error_response("Invalid or empty question provided", session_id)
@@ -128,7 +123,7 @@ async def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
     )
     
     try:
-        # Step 1: Execute tools with better error handling
+        # Step 1: Execute tools
         tool_results = {}
         tools_used = []
         
@@ -139,7 +134,6 @@ async def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
                 )
             except Exception as e:
                 synthesis_logger.error("tool_execution_failed", session_id=session_id, error=str(e))
-                # Continue with empty tool results instead of failing
                 tool_results, tools_used = {}, []
 
         # Step 2: Build session context
@@ -148,116 +142,168 @@ async def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
                 conversation_history, is_followup, session_id, user_question
             )
         
-        # Step 3: Create prompt
-        with PerformanceTimer(synthesis_logger, "prompt_creation", session_id=session_id):
-            prompt = create_dynamic_synthesis_prompt(
-                user_question, rag_context, session_context, workflow_parameters, 
-                manager_decision, tool_results
-            )
+        # Step 3: Get language info and determine response strategy
+        language_info = state.get("language_info", {"language": "en"})
+        target_language = language_info.get("language", "en")
+        requires_multilingual = target_language != "en"
         
-        # Step 4: Generate response with better error handling
+        synthesis_logger.info(
+            "language_context_determined",
+            session_id=session_id,
+            target_language=target_language,
+            requires_multilingual=requires_multilingual,
+            multilingual_available=MULTILINGUAL_AVAILABLE
+        )
+        
+        # Step 4: Generate response based on language
         synthesis_content = ""
-        try:
-            llm = get_llm(config.get("llm", "gpt-4o-mini"))
-            with PerformanceTimer(synthesis_logger, "llm_generation", session_id=session_id):
-                response = llm.invoke(prompt)
-                synthesis_content = response.content if hasattr(response, 'content') else str(response)
-            
-            synthesis_logger.info(
-                "llm_response_generated",
-                session_id=session_id,
-                response_length=len(synthesis_content)
-            )
-            
-        except Exception as e:
-            synthesis_logger.error(
-                "llm_generation_failed",
-                session_id=session_id,
-                error_type=type(e).__name__,
-                error_message=str(e)
-            )
-            # Don't return immediately, let fallback handle it
-            synthesis_content = ""
+        translation_info = None
         
-        # Step 5: Validate and handle poor responses
+        if requires_multilingual and MULTILINGUAL_AVAILABLE and target_language == "es":
+            # Use native Spanish LLM for best quality
+            synthesis_logger.info("using_native_spanish_generation", session_id=session_id)
+            
+            try:
+                # Build Spanish-specific prompt
+                spanish_prompt = create_spanish_native_prompt(
+                    user_question, rag_context, session_context, workflow_parameters, 
+                    manager_decision, tool_results
+                )
+                
+                # Import here to avoid circular imports
+                import asyncio
+                from backend.code.multilingual.translation_service import translation_service
+                
+                # Run async function in sync context
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    translation_result = loop.run_until_complete(
+                        translation_service.get_native_response(spanish_prompt, "es")
+                    )
+                    synthesis_content = translation_result.translated_text
+                    translation_info = {
+                        "method": translation_result.translation_method,
+                        "confidence": translation_result.confidence,
+                        "processing_time": translation_result.processing_time,
+                        "native_response": True
+                    }
+                    
+                    synthesis_logger.info(
+                        "native_spanish_response_generated",
+                        session_id=session_id,
+                        response_length=len(synthesis_content),
+                        confidence=translation_result.confidence
+                    )
+                finally:
+                    loop.close()
+                    
+            except Exception as e:
+                synthesis_logger.error(
+                    "native_spanish_generation_failed",
+                    session_id=session_id,
+                    error=str(e)
+                )
+                # Fallback to English generation + translation
+                synthesis_content = ""
+        
+        # Step 5: Fallback to English generation if needed
+        if not synthesis_content:
+            synthesis_logger.info("using_english_generation", session_id=session_id)
+            
+            try:
+                # Create English prompt
+                prompt = create_dynamic_synthesis_prompt(
+                    user_question, rag_context, session_context, workflow_parameters, 
+                    manager_decision, tool_results
+                )
+                
+                llm = get_llm(config.get("llm", "gpt-4o-mini"))
+                with PerformanceTimer(synthesis_logger, "llm_generation", session_id=session_id):
+                    response = llm.invoke(prompt)
+                    english_content = response.content if hasattr(response, 'content') else str(response)
+                
+                # Translate if needed
+                if requires_multilingual and MULTILINGUAL_AVAILABLE and english_content:
+                    synthesis_logger.info("translating_english_to_target", 
+                                        session_id=session_id, 
+                                        target_language=target_language)
+                    
+                    try:
+                        # Import and run translation
+                        import asyncio
+                        from backend.code.multilingual.translation_service import translation_service
+                        
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        try:
+                            translation_result = loop.run_until_complete(
+                                translation_service.translate_text(
+                                    text=english_content,
+                                    target_lang=target_language,
+                                    source_lang="en",
+                                    use_immigration_context=True
+                                )
+                            )
+                            synthesis_content = translation_result.translated_text
+                            translation_info = {
+                                "method": translation_result.translation_method,
+                                "confidence": translation_result.confidence,
+                                "processing_time": translation_result.processing_time,
+                                "translated_from": "en"
+                            }
+                            
+                            synthesis_logger.info(
+                                "translation_completed",
+                                session_id=session_id,
+                                target_language=target_language,
+                                response_length=len(synthesis_content)
+                            )
+                        finally:
+                            loop.close()
+                            
+                    except Exception as e:
+                        synthesis_logger.error(
+                            "translation_failed_using_english",
+                            session_id=session_id,
+                            error=str(e)
+                        )
+                        synthesis_content = english_content
+                        translation_info = {
+                            "method": "english_fallback_due_to_translation_error",
+                            "error": str(e)
+                        }
+                else:
+                    synthesis_content = english_content
+                    translation_info = {"method": "english_native"} if not requires_multilingual else None
+                
+            except Exception as e:
+                synthesis_logger.error(
+                    "english_generation_failed",
+                    session_id=session_id,
+                    error=str(e)
+                )
+                synthesis_content = ""
+        
+        # Step 6: Fallback response if everything failed
         if not synthesis_content or len(synthesis_content.strip()) < 20:
             synthesis_logger.warning(
-                "poor_llm_response_using_fallback",
+                "using_fallback_response",
                 session_id=session_id,
                 response_length=len(synthesis_content.strip()) if synthesis_content else 0
             )
             synthesis_content = create_fallback_response(
-                user_question, conversation_history, is_followup, rag_context
+                user_question, conversation_history, is_followup, rag_context, target_language
             )
+            if not translation_info:
+                translation_info = {"method": "fallback_response"}
         
-        # Step 6: MULTILINGUAL PROCESSING
-        language_info = state.get("language_info", {"language": "en"})
-        translation_info = None
-        
-        # IMPROVED: Better language detection and processing
-        target_language = language_info.get("language", "en")
-        requires_multilingual = (
-            target_language != "en" or 
-            language_info.get("requires_translation", False)
-        )
-        
-        if requires_multilingual and MULTILINGUAL_AVAILABLE:
-            try:
-                synthesis_logger.info(
-                    "attempting_multilingual_response",
-                    session_id=session_id,
-                    target_language=target_language,
-                    requires_translation=language_info.get("requires_translation", False)
-                )
-                
-                multilingual_content, translation_info = await generate_multilingual_response(
-                    user_question, language_info, synthesis_content, session_id
-                )
-                
-                if multilingual_content and multilingual_content != synthesis_content:
-                    original_length = len(synthesis_content)
-                    synthesis_content = multilingual_content
-                    
-                    synthesis_logger.info(
-                        "multilingual_response_applied",
-                        session_id=session_id,
-                        target_language=target_language,
-                        original_length=original_length,
-                        translated_length=len(multilingual_content)
-                    )
-                
-            except Exception as e:
-                synthesis_logger.error(
-                    "multilingual_processing_failed",
-                    session_id=session_id,
-                    error_type=type(e).__name__,
-                    error_message=str(e)
-                )
-                # Keep English response as fallback
-                translation_info = {
-                    "method": "english_fallback_due_to_error",
-                    "error": str(e),
-                    "fallback_used": True
-                }
-        
-        elif requires_multilingual and not MULTILINGUAL_AVAILABLE:
-            synthesis_logger.warning(
-                "multilingual_requested_but_unavailable",
-                session_id=session_id,
-                target_language=target_language
-            )
-            translation_info = {
-                "method": "multilingual_service_unavailable",
-                "fallback_used": True
-            }
-
-        # IMPROVEMENT: Enhanced logging for completion
+        # Step 7: Return results
         synthesis_logger.info(
             "synthesis_completed_successfully",
             session_id=session_id,
             final_response_length=len(synthesis_content),
             tools_used_count=len(tools_used),
-            strategy_applied=str(workflow_parameters.get("question_type", "unknown")),
             target_language=target_language,
             translation_applied=bool(translation_info)
         )
@@ -274,7 +320,6 @@ async def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
                 "response_type": "strategic_synthesis",
                 "manager_guided": bool(manager_decision),
                 "tools_executed": len(tools_used),
-                "fallback_used": len(synthesis_content) < 100,  # Better fallback detection
                 "user_language": target_language,
                 "requires_translation": requires_multilingual,
                 "translation_info": translation_info,
@@ -282,6 +327,171 @@ async def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
                 "processing_successful": True
             }
         }
+        
+    except Exception as e:
+        synthesis_logger.error(
+            "synthesis_node_critical_failure",
+            session_id=session_id,
+            error_type=type(e).__name__,
+            error_message=str(e)
+        )
+        
+        return create_error_response(f"Synthesis failed: {str(e)}", session_id, state)
+
+
+def create_spanish_native_prompt(user_question: str, rag_context: str, session_context: str, 
+                                workflow_parameters: Dict[str, Any], manager_decision: str = "", 
+                                tool_results: Dict[str, Any] = None) -> str:
+    """Create a native Spanish prompt for optimal Spanish responses."""
+    
+    # Build Spanish context
+    spanish_context = ""
+    if session_context:
+        spanish_context = f"CONTEXTO DE LA CONVERSACIÓN:\n{session_context}\n\n"
+    
+    # Build knowledge context
+    knowledge_context = ""
+    if rag_context:
+        knowledge_context = f"INFORMACIÓN RELEVANTE DE INMIGRACIÓN:\n{rag_context}\n\n"
+    
+    # Build tool results
+    tools_context = ""
+    if tool_results:
+        tools_context = "RESULTADOS DE HERRAMIENTAS:\n"
+        for tool_name, result in tool_results.items():
+            if isinstance(result, dict) and "error" not in result:
+                tools_context += f"- {tool_name}: {str(result)[:200]}...\n"
+        tools_context += "\n"
+    
+    # Create comprehensive Spanish prompt
+    prompt = f"""Responde esta pregunta sobre inmigración estadounidense en español profesional y preciso:
+
+PREGUNTA DEL USUARIO: "{user_question}"
+
+{spanish_context}{knowledge_context}{tools_context}
+
+INSTRUCCIONES ESPECÍFICAS:
+- Responde SIEMPRE en español claro y profesional
+- Mantén nombres oficiales de formularios en inglés (I-20, I-94, I-485, etc.)
+- Usa terminología de inmigración precisa
+- Proporciona información específica y accionable
+- Incluye recursos oficiales cuando sea apropiado
+- Usa formato markdown con ## para títulos principales
+- Organiza información en listas cuando sea útil
+- Usa **negrita** para información importante
+
+Si esta es una pregunta de seguimiento basada en el contexto de la conversación, refiérete específicamente a lo que se discutió anteriormente.
+
+Responde de manera completa y útil en español:"""
+    
+    return prompt
+
+
+# Fix 2: Update create_fallback_response to handle language parameter properly
+def create_fallback_response(user_question, conversation_history, is_followup, rag_context, language="en"):
+    """Create a smart fallback response with proper multilingual support"""
+    
+    question_lower = user_question.lower()
+    
+    # Determine response language and templates
+    if language == "es":
+        templates = {
+            "session_title": "Su Historial de Conversación",
+            "your_question": "Su Pregunta:",
+            "first_question": "Su primera pregunta fue:",
+            "conversation_so_far": "Hemos tenido {} {} en esta conversación:",
+            "turn": "turno", "turns": "turnos",
+            "current_session": "Sesión Actual:",
+            "immigration_info": "Información de Inmigración",
+            "resources": "Recursos Oficiales de Inmigración:",
+            "verify": "Siempre verifique la información con fuentes oficiales de USCIS.",
+            "understanding": "Entiendo que está preguntando sobre inmigración.",
+            "no_specific_info": "Aunque no tengo información específica disponible inmediatamente, puedo guiarle a los recursos correctos.",
+            "official_resources": "Recursos Oficiales:",
+            "website": "Sitio Web de USCIS:",
+            "contact_center": "Centro de Contacto de USCIS:",
+            "forms_fees": "Formularios y Tarifas:"
+        }
+    else:
+        templates = {
+            "session_title": "Your Conversation History",
+            "your_question": "Your Question:",
+            "first_question": "Your first question was:",
+            "conversation_so_far": "We've had {} {} in this conversation:",
+            "turn": "turn", "turns": "turns",
+            "current_session": "Current Session:",
+            "immigration_info": "Immigration Information",
+            "resources": "Official Immigration Resources:",
+            "verify": "Always verify information with official USCIS sources for the most current requirements.",
+            "understanding": "I understand you're asking about immigration.",
+            "no_specific_info": "While I don't have specific information immediately available, I can guide you to the right resources.",
+            "official_resources": "Official Resources:",
+            "website": "USCIS Website:",
+            "contact_center": "USCIS Contact Center:",
+            "forms_fees": "Forms and Fees:"
+        }
+    
+    # Handle session reference questions
+    if is_followup and conversation_history and any(phrase in question_lower for phrase in [
+        "first question", "what did i ask", "previous", "earlier", "what was",
+        "primera pregunta", "qué pregunté", "anterior", "antes"
+    ]):
+        first_turn = conversation_history[0]
+        count = len(conversation_history)
+        turn_word = templates["turn"] if count == 1 else templates["turns"]
+        
+        return f"""# {templates["session_title"]}
+
+## {templates["your_question"]} "{user_question}"
+
+### {templates["first_question"]}
+**"{first_turn.question}"**
+
+### {templates["conversation_so_far"].format(count, turn_word)}
+""" + "\n".join([f"**Turn {i+1}:** {turn.question}" for i, turn in enumerate(conversation_history)]) + f"""
+
+### {templates["current_session"]}
+- Session ID: {conversation_history[0].timestamp.split('T')[0] if conversation_history else 'Unknown'}
+- Total questions: {len(conversation_history)}
+
+{templates["verify"]}
+"""
+    
+    # Default immigration info response
+    else:
+        uscis_url = "https://www.uscis.gov" + ("" if language == "en" else "/es")
+        contact_url = "https://www.uscis.gov/" + ("contactcenter" if language == "en" else "es/contactcenter")
+        forms_url = "https://www.uscis.gov/" + ("forms" if language == "en" else "es/formularios")
+        
+        response_text = rag_context if rag_context else f"{templates['understanding']} {templates['no_specific_info']}"
+        
+        return f"""# {templates["immigration_info"]}
+
+## {templates["your_question"]} "{user_question}"
+
+{response_text}
+
+## {templates["official_resources"]}
+- **{templates["website"]}** {uscis_url}
+- **{templates["contact_center"]}** {contact_url}
+- **{templates["forms_fees"]}** {forms_url}
+
+{templates["verify"]}
+"""
+
+
+# Fix 3: Add better error handling for translation service import
+def get_translation_service_safely():
+    """Safely import translation service with proper error handling"""
+    try:
+        from backend.code.multilingual.translation_service import translation_service
+        return translation_service, True
+    except ImportError as e:
+        synthesis_logger.warning(f"Translation service not available: {e}")
+        return None, False
+    except Exception as e:
+        synthesis_logger.error(f"Error importing translation service: {e}")
+        return None, False
         
     except Exception as e:
         # IMPROVEMENT: Comprehensive error handling
