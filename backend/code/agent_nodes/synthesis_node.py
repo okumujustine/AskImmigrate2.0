@@ -99,12 +99,6 @@ def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
 
     session_id = state.get("session_id", "")
     user_question = state.get("text", "")
-    
-    # Validate inputs early
-    if not user_question or len(user_question.strip()) < 3:
-        synthesis_logger.warning("invalid_user_question", session_id=session_id, question_length=len(user_question))
-        return create_error_response("Invalid or empty question provided", session_id)
-    
     workflow_parameters = state.get("workflow_parameters", {})
     rag_context = state.get("rag_response", "")
     conversation_history = state.get("conversation_history", [])
