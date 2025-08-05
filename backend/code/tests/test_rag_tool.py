@@ -78,8 +78,8 @@ class TestRagRetrievalTool:
             mock_get_docs.assert_called_once_with(
                 query="What is an F-1 visa?",
                 collection=mock_collection,
-                n_results=5,
-                threshold=0.5
+                n_results=3,
+                threshold=0.6
             )
 
     def test_rag_tool_empty_query(self):
@@ -143,15 +143,15 @@ class TestRagRetrievalTool:
             mock_init_db.return_value = mock_db_instance
             mock_collection = MagicMock()
             mock_get_collection.return_value = mock_collection
-            # Return more than 5 documents to test limiting
+            # Return more than 3 documents to test limiting
             mock_get_docs.return_value = [f"Document {i}: Content..." for i in range(1, 8)]
             
             result = rag_retrieval_tool("Comprehensive immigration question")
             
-            # Should limit references to 5 even if more documents returned
-            assert len(result["references"]) == 5
+            # Should limit references to 3 even if more documents returned
+            assert len(result["references"]) == 3
             assert len(result["documents"]) == 7  # Original documents not limited
-            assert result["references"] == [f"Immigration Document {i}" for i in range(1, 6)]
+            assert result["references"] == [f"Immigration Document {i}" for i in range(1, 4)]
 
     def test_rag_tool_chat_logic_error(self):
         """Test RAG tool when chat logic throws an exception"""
@@ -182,10 +182,12 @@ class TestRagRetrievalTool:
         
         with patch('backend.code.tools.rag_tool.slugify_chat_session') as mock_slugify, \
              patch('backend.code.tools.rag_tool.chat') as mock_chat, \
+             patch('backend.code.tools.rag_tool.get_cached_chroma_collection') as mock_get_cached, \
              patch('backend.code.tools.rag_tool.initialize_chroma_db') as mock_init_db:
             
             mock_slugify.return_value = "db-error-session-123"
             mock_chat.return_value = "Chat response"
+            mock_get_cached.return_value = (None, None)  # Force fallback to non-cached
             mock_init_db.side_effect = Exception("Database connection failed")
             
             result = rag_retrieval_tool("Test query")
@@ -297,6 +299,7 @@ class TestRagRetrievalTool:
         
         with patch('backend.code.tools.rag_tool.slugify_chat_session') as mock_slugify, \
              patch('backend.code.tools.rag_tool.chat') as mock_chat, \
+             patch('backend.code.tools.rag_tool.get_cached_chroma_collection') as mock_get_cached, \
              patch('backend.code.tools.rag_tool.initialize_chroma_db') as mock_init_db, \
              patch('backend.code.tools.rag_tool.get_collection') as mock_get_collection, \
              patch('backend.code.tools.rag_tool.get_relevant_documents') as mock_get_docs:
@@ -305,6 +308,7 @@ class TestRagRetrievalTool:
             
             mock_slugify.return_value = "param-test-session-123"
             mock_chat.return_value = "Test response"
+            mock_get_cached.return_value = (None, None)  # Force fallback to non-cached
             mock_db_instance = MagicMock()
             mock_init_db.return_value = mock_db_instance
             mock_collection = MagicMock()
@@ -317,8 +321,8 @@ class TestRagRetrievalTool:
             mock_get_docs.assert_called_once_with(
                 query=test_query,
                 collection=mock_collection,
-                n_results=5,
-                threshold=0.5
+                n_results=3,
+                threshold=0.6
             )
             
             # Verify exact parameters passed to get_collection

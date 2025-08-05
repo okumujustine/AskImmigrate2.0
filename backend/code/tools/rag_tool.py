@@ -8,6 +8,29 @@ from backend.code.utils import (
 )
 from backend.code.agent_nodes.rag_retrieval_agent.chat_logic import chat
 
+# Global cache for ChromaDB instance and collection
+_chroma_cache = {
+    "db_instance": None,
+    "collection": None,
+    "initialized": False
+}
+
+def get_cached_chroma_collection():
+    """Get cached ChromaDB collection, initialize if needed."""
+    if not _chroma_cache["initialized"]:
+        try:
+            _chroma_cache["db_instance"] = initialize_chroma_db()
+            _chroma_cache["collection"] = get_collection(
+                _chroma_cache["db_instance"], 
+                collection_name="publications"
+            )
+            _chroma_cache["initialized"] = True
+        except Exception as e:
+            # If caching fails, fall back to non-cached approach
+            return None, None
+    
+    return _chroma_cache["db_instance"], _chroma_cache["collection"]
+
 
 @tool
 def rag_retrieval_tool(query: str) -> Dict[str, Any]:
@@ -28,14 +51,20 @@ def rag_retrieval_tool(query: str) -> Dict[str, Any]:
         # Use the existing chat logic to get a response
         rag_response = chat(session_id=session_id, question=query)
         
-        # Get actual retrieved documents using existing utils functions
-        db_instance = initialize_chroma_db()
-        collection = get_collection(db_instance, collection_name="publications")
+        # Try to use cached ChromaDB instance first
+        db_instance, collection = get_cached_chroma_collection()
+        
+        if db_instance is None or collection is None:
+            # Fallback to non-cached approach if caching fails
+            db_instance = initialize_chroma_db()
+            collection = get_collection(db_instance, collection_name="publications")
+        
+        # Get relevant documents using cached collection
         documents = get_relevant_documents(
             query=query,
             collection=collection,
-            n_results=5,
-            threshold=0.5
+            n_results=3,  # Use optimized number from config
+            threshold=0.6  # Use optimized threshold from config
         )
         
         # Create references from documents (documents are strings in the current utils)
@@ -43,7 +72,7 @@ def rag_retrieval_tool(query: str) -> Dict[str, Any]:
         
         return {
             "response": rag_response,
-            "references": references[:5],
+            "references": references[:3],  # Match n_results
             "documents": documents
         }
         
