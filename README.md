@@ -103,7 +103,7 @@ User Question → Manager Agent → Synthesis Agent → Reviewer Agent → Respo
 
 ### Installation
 ```bash
-git clone https://github.com/okumujustine/AskImmigrate.git
+git clone https://github.com/okumujustine/AskImmigrate2.0.git
 cd AskImmigrate2.0
 pip install -r requirements.txt
 python -m backend.code.embed_documents
@@ -304,7 +304,7 @@ tools_enabled:
 ### **Development Setup**
 ```bash
 # Clone and setup
-git clone https://github.com/okumujustine/AskImmigrate.git
+git clone https://github.com/okumujustine/AskImmigrate2.0.git
 cd AskImmigrate2.0
 pip install -r requirements.txt
 
