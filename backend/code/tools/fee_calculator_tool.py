@@ -22,6 +22,7 @@ def validate_parsed_query(parsed_query: Dict[str, Any]) -> None:
     if applicants["total"] == 0 and not applicants.get("is_company"):
         raise ValueError("Could not determine the number of applicants")
 
+@tool
 def fee_calculator_tool(query: str) -> Dict[str, Any]:
     """
     Dynamic immigration fee calculator that handles complex scenarios.
