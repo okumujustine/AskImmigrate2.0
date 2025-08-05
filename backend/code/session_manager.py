@@ -623,6 +623,9 @@ class SessionManager:
             if common_terms:
                 is_followup = True
                 reason = f"contains previously discussed terms: {common_terms}"
+            else:
+                is_followup = False
+                reason = "no related terms found in context"
             
         # 4. Very short questions without immigration terms = might be follow-up
         elif is_short_question and not has_immigration_terms and len(current_question.split()) <= 3:
