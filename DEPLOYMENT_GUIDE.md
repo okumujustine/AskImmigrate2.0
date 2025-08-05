@@ -132,9 +132,6 @@ MAX_RETRIES=3
 ### 5. Initialize Data and Models
 
 ```bash
-# Download spaCy model (if not already included)
-python -m spacy download en_core_web_trf
-
 # Initialize vector database
 python -c "from backend.code.embed_documents import main; main()"
 
@@ -185,9 +182,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application
 COPY . .
-
-# Download spaCy model
-RUN python -m spacy download en_core_web_trf
 
 # Create logs directory
 RUN mkdir -p backend/outputs/logs
