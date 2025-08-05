@@ -37,7 +37,7 @@ body {
 
 /* Chat Sidebar */
 .chat-sidebar {
-  width: 280px;
+  width: 300px;
   background-color: #1f2937;
   color: white;
   display: flex;
@@ -51,10 +51,10 @@ body {
 }
 
 .sidebar-header h2 {
-  font-size: 20px;
-  font-weight: 600;
-  margin-bottom: 16px;
-  color: #f9fafb;
+  font-size: 18px; 
+  margin-bottom: 0;
+  flex: 1;
+  min-width: 0;
 }
 
 .new-chat-btn {
@@ -678,6 +678,7 @@ body {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+  gap: 20px;
 }
 
 .language-selector-container {
@@ -700,7 +701,7 @@ body {
   border-radius: 6px;
   color: white;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
   transition: all 0.2s;
   min-width: 120px;
 }

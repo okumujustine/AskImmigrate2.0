@@ -7,7 +7,7 @@ interface ChatSidebarProps {
   currentSessionId: string | null;
   onSessionSelect: (sessionId: string) => void;
   onNewChat: () => void;
-  uiStrings: Record<string, string>;
+  uiStrings?: Record<string, string>;
   languageSelector?: ReactNode;
 }
 
@@ -36,7 +36,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
     <div className="chat-sidebar">
       <div className="sidebar-header">
         <div className="sidebar-title-row">
-          <h2>{uiStrings.askImmigrate}</h2>
+          <h2>{uiStrings?.askImmigrate}</h2>
           {languageSelector && (
             <div className="language-selector-container">
               {languageSelector}
@@ -45,7 +45,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
         </div>
         <button className="new-chat-btn" onClick={onNewChat}>
           <Plus size={16} />
-          {uiStrings.newChat}
+          {uiStrings?.newChat}
         </button>
       </div>
 

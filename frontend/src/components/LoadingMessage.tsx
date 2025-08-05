@@ -2,7 +2,7 @@ import { Bot, Loader2 } from "lucide-react";
 import React from "react";
 
 interface LoadingMessageProps {
-  uiStrings: Record<string, string>;
+  uiStrings?: Record<string, string>;
 }
 
 export const LoadingMessage: React.FC<LoadingMessageProps> = ({
@@ -17,7 +17,7 @@ export const LoadingMessage: React.FC<LoadingMessageProps> = ({
         <div className="message-content">
           <div className="loading-content">
             <Loader2 className="spinner" size={16} />
-            <span>{uiStrings.thinking}</span>
+            <span>{uiStrings?.thinking}</span>
           </div>
         </div>
       </div>

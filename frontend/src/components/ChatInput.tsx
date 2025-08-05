@@ -5,7 +5,7 @@ interface ChatInputProps {
   onSendMessage: (message: string) => void;
   disabled?: boolean;
   hasSessionId?: boolean;
-  uiStrings: Record<string, string>;
+  uiStrings?: Record<string, string>;
 }
 
 export const ChatInput: React.FC<ChatInputProps> = ({
@@ -32,8 +32,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   };
 
   const placeholder = hasSessionId
-    ? uiStrings.continueChatPlaceholder
-    : uiStrings.newChatPlaceholder;
+    ? uiStrings?.continueChatPlaceholder
+    : uiStrings?.newChatPlaceholder;
 
   return (
     <form className="chat-input-form" onSubmit={handleSubmit}>
