@@ -97,44 +97,54 @@ User Question → Manager Agent → Synthesis Agent → Reviewer Agent → Respo
 ## 🚀 Quick Start
 
 ### Prerequisites
-- **Python**: 3.10+
-- **Node.js**: >=18.0.0 and <21.0.0  (for React frontend)
-- **API key** (GROQ or OpenAI)
+- **Python**: 3.10+ (tested with 3.11)
+- **Node.js**: >=18.0.0 and <21.0.0 (for React frontend, optional)
+- **API Keys**: GROQ (recommended) or OpenAI + Tavily (required)
 
 ### Installation
 ```bash
 git clone https://github.com/okumujustine/AskImmigrate2.0.git
 cd AskImmigrate2.0
+
+# Install Python dependencies
 pip install -r requirements.txt
+
+# Initialize vector database (one-time setup)
 python -m backend.code.embed_documents
+
+# Install frontend dependencies (optional - for web UI)
 cd frontend
 npm install
+cd ..
 ```
 
 ### Environment Setup
 Create `.env` file in the repository root directory:
 ```bash
-# Choose one LLM provider:
+# Choose one LLM provider (REQUIRED):
 GROQ_API_KEY=your-groq-api-key          # Recommended: Fast + Free tier
-OPENAI_API_KEY=your-openai-api-key      # Alternative: Requires billing
+# Alternative: OPENAI_API_KEY=your-openai-api-key      # Requires billing
 
-# Web search functionality (required)
+# Web search functionality (REQUIRED)
 TAVILY_API_KEY=your-tavily-api-key      # Get from: https://tavily.com
 
 # Optional: Enable advanced tracing and monitoring
 LANGSMITH_TRACING=true
 LANGSMITH_ENDPOINT="https://api.smith.langchain.com"
 LANGSMITH_API_KEY=your-langsmith-key
-LANGSMITH_PROJECT="AksImmigrate2.0"
+LANGSMITH_PROJECT="AskImmigrate2.0"
 ```
 
 ### Quick Test
 ```bash
-# Test without API key
+# Test CLI without API key (uses mock data)
 python backend/code/cli.py --test -q "what is f1?"
 
-# Use session-aware multi-agent workflow
+# Use session-aware multi-agent workflow (requires API keys)
 python backend/code/cli.py --agent -q "What is an F-1 visa?" -s "my-session"
+
+# Alternative: Use convenience script
+./run_cli.sh --agent -q "What is an F-1 visa?" -s "my-session"
 ```
 
 ---
@@ -184,8 +194,9 @@ python backend/code/cli.py --agent --list-sessions
 
 ### Start Backend Server
 ```bash
- uvicorn backend.code.api:app --host 0.0.0.0 --port 8088
+uvicorn backend.code.api:app --host 0.0.0.0 --port 8088
 ```
+*Backend will be available at: http://localhost:8088*
 
 ### Start Frontend (Optional)
 ```bash
@@ -193,8 +204,10 @@ cd frontend
 npm install
 npm run dev
 ```
+*Frontend will be available at: http://localhost:5173*  
+*Note: `run_app.sh` script uses port 4044 for frontend*
 
-Visit [http://localhost:5173](http://localhost:5173) for the web interface.
+Visit the frontend URL shown in your terminal for the web interface.
 
 ---
 
@@ -202,11 +215,15 @@ Visit [http://localhost:5173](http://localhost:5173) for the web interface.
 
 ### Run Test Suite
 ```bash
-# Test session management
-python backend/code/tests/test_agentic_session.py
+# Install test dependencies
+pip install -r requirements-test.txt
 
-# Test full workflow
-pytest tests/
+# Run all tests with coverage
+pytest backend/code/tests/ --cov=backend/code --cov-report=term-missing
+
+# Run specific test modules
+python backend/code/tests/test_agentic_session.py  # Session management
+pytest backend/code/tests/test_rag_tool.py -v      # RAG functionality
 ```
 
 ### Manual Testing
@@ -214,6 +231,11 @@ pytest tests/
 # Test session-aware workflow
 python backend/code/cli.py --agent -q "What is F-2 visa?" -s "test-session"
 python backend/code/cli.py --agent -q "what was my first question?" -s "test-session"
+
+# Test web interface (requires both frontend and backend running)
+# Terminal 1: uvicorn backend.code.api:app --host 0.0.0.0 --port 8088
+# Terminal 2: cd frontend && npm run dev
+# Visit: http://localhost:5173
 ```
 
 ---
@@ -274,28 +296,66 @@ graph TD
 ## 🛠️ Configuration
 
 ### **Model Selection**
-```bash
-# config/config.yaml
+```yaml
+# backend/config/config.yaml
 llm: llama3-8b-8192        # GROQ (recommended)
 # llm: gpt-4o-mini          # OpenAI alternative
 ```
 
 ### **Session Settings**
-```bash
+```yaml
 # Conversation memory settings
 memory_strategies:
-  trimming_window_size: 10    # Turns to keep in context
-  summarization_max_tokens: 1000
+  trimming_window_size: 4    # Turns to keep in context
+  summarization_max_tokens: 800
 ```
 
 ### **Tool Configuration**
-```bash
+```yaml
 # Available tools per agent
-tools_enabled:
-  manager_node: [rag_retriever]
-  synthesis_node: [rag_retriever, web_search_tool, fee_calculator_tool]
-  reviewer_node: [fee_calculator_tool]
+vectordb:
+  threshold: 0.6       # Similarity threshold for document retrieval
+  n_results: 3         # Number of documents to retrieve
 ```
+
+---
+
+## 🔧 Troubleshooting
+
+### **Common Issues**
+
+**❌ "API key not found" error:**
+```bash
+# Ensure .env file exists in root directory
+cp .env.example .env
+# Edit .env with your actual API keys
+```
+
+**❌ "ModuleNotFoundError" on import:**
+```bash
+# Ensure you're running from project root
+cd AskImmigrate2.0
+python -m backend.code.cli
+```
+
+**❌ Frontend not connecting to backend:**
+```bash
+# Check backend is running on port 8088
+curl http://localhost:8088/health
+# Check CORS settings in backend/code/api.py
+```
+
+**❌ Vector database initialization fails:**
+```bash
+# Re-run embedding process
+python -m backend.code.embed_documents
+# Check data files exist in backend/data/
+```
+
+### **Port Configuration**
+- **Backend API**: 8088 (configurable via `--port`)
+- **Frontend**: 5173 (Vite default) or 4044 (run_app.sh)
+- **Web UI**: Uses frontend port automatically
 
 ---
 
@@ -339,7 +399,7 @@ Released under MIT License. See [LICENSE](LICENSE) for details.
 - Deo Mugabe ([deo.mugabe7@gmail.com](mailto:deo.mugabe7@gmail.com))
 - Hillary Arinda ([arinda.hillary@gmail.com](mailto:arinda.hillary@gmail.com))
 
-**Issues & Support:** [GitHub Issues](https://github.com/okumujustine/AskImmigrate/issues)
+**Issues & Support:** [GitHub Issues](https://github.com/okumujustine/AskImmigrate2.0/issues)
 
 ---
 
