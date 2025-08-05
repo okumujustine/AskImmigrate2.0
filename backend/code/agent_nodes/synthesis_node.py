@@ -609,97 +609,136 @@ def parse_tool_recommendations(manager_decision: str, user_question: str) -> lis
     return recommended_tools
 
 def create_dynamic_synthesis_prompt(user_question, rag_context, session_context, workflow_parameters, manager_decision="", tool_results=None):
-    """Create a dynamic prompt that can handle any type of follow-up question."""
+    """Create a dynamic prompt using the configured synthesis agent prompt with current information override."""
     
-    # Detect question type for tailored response
-    question_lower = user_question.lower()
+    # Get the proper synthesis agent prompt from configuration
+    synthesis_prompt_config = prompt_config.get("synthesis_agent_prompt", {})
+    role = synthesis_prompt_config.get("role", "You are an expert US Immigration Assistant.")
+    instruction = synthesis_prompt_config.get("instruction", "Provide helpful immigration guidance.")
     
-    if any(phrase in question_lower for phrase in ["first question", "what did i ask", "previous", "earlier"]):
-        instruction_type = "session_reference"
-    elif any(phrase in question_lower for phrase in ["extend", "renew", "how do i", "what about"]):
-        instruction_type = "follow_up_immigration"
-    elif any(phrase in question_lower for phrase in ["fee", "cost", "price", "how much"]):
-        instruction_type = "fee_inquiry"
-    else:
-        instruction_type = "general"
-    
-    # Include tool results if available
+    # Include tool results with emphasis on current information
     tool_results_text = ""
+    current_info_available = False
+    
     if tool_results:
-        tool_results_text = "\nTOOL RESULTS:\n"
+        tool_results_text = "\n🔍 CURRENT INFORMATION SOURCES:\n"
         for tool_name, result in tool_results.items():
             if isinstance(result, dict) and "error" in result:
-                tool_results_text += f"- {tool_name}: ERROR - {result['error']}\n"
+                tool_results_text += f"❌ {tool_name}: {result['error']}\n"
+            elif tool_name == "web_search_tool":
+                current_info_available = True
+                tool_results_text += f"🌐 WEB SEARCH (CURRENT 2025 DATA): {str(result)[:500]}{'...' if len(str(result)) > 500 else ''}\n"
             else:
-                tool_results_text += f"- {tool_name}: {str(result)[:200]}{'...' if len(str(result)) > 200 else ''}\n"
+                tool_results_text += f"📚 {tool_name}: {str(result)[:300]}{'...' if len(str(result)) > 300 else ''}\n"
+    
+    # Add explicit current information override if web search results are available
+    current_info_override = ""
+    if current_info_available:
+        current_info_override = f"""
+🚨 CRITICAL INSTRUCTION OVERRIDE:
+- You have access to CURRENT 2025 web search results above
+- NEVER mention knowledge cutoffs or outdated information disclaimers
+- Use the web search results as your PRIMARY source for current events/policies
+- Respond as if you have real-time access to 2025 information
+- Start your response with current information: "Based on current information from 2025..."
+
+"""
     
     # Include manager guidance if available
     manager_guidance = ""
     if manager_decision:
-        manager_guidance = f"\nMANAGER STRATEGIC GUIDANCE:\n{manager_decision[:500]}{'...' if len(manager_decision) > 500 else ''}\n"
+        manager_guidance = f"\n📋 STRATEGIC GUIDANCE FROM MANAGER:\n{manager_decision[:500]}{'...' if len(manager_decision) > 500 else ''}\n"
 
-    # Base instruction
-    base_instruction = f"""You are an expert US Immigration Assistant. Answer the user's question: "{user_question}"
+    # Construct the full prompt
+    full_prompt = f"""{role}
+
+{current_info_override}
+
+{instruction}
+
+🎯 USER QUESTION: "{user_question}"
 
 {session_context}
 
-IMMIGRATION KNOWLEDGE:
-{rag_context if rag_context else "Use your general immigration knowledge."}
+📚 IMMIGRATION KNOWLEDGE BASE:
+{rag_context if rag_context else "Use your general immigration knowledge for foundational information."}
 
 {tool_results_text}
 
 {manager_guidance}
 
-TASK INSTRUCTIONS:
+Remember: If web search results are provided above, prioritize that current information over any older knowledge."""
+    
+    return full_prompt
+
+
+def create_fallback_response(user_question, conversation_history, is_followup, rag_context):
+    """Create a smart fallback response when LLM fails."""
+    
+    question_lower = user_question.lower()
+    
+    # Handle session reference questions directly
+    if is_followup and conversation_history and any(phrase in question_lower for phrase in [
+        "first question", "what did i ask", "previous", "earlier", "what was"
+    ]):
+        
+        first_turn = conversation_history[0]
+        
+        return f"""# Your Conversation History
+
+## Your Question: "{user_question}"
+
+Based on our conversation history, here's what I can tell you:
+
+### Your First Question
+Your first question was: **"{first_turn.question}"**
+
+### Our Conversation So Far
+We've had {len(conversation_history)} {'turn' if len(conversation_history) == 1 else 'turns'} in this conversation:
+
+""" + "\n".join([f"**Turn {i+1}:** {turn.question}" for i, turn in enumerate(conversation_history)]) + f"""
+
+### Current Session
+- Session ID: {conversation_history[0].timestamp.split('T')[0] if conversation_history else 'Unknown'}
+- Total questions asked: {len(conversation_history)}
+
+Is there anything specific about our previous conversation you'd like me to clarify or expand on?
 """
     
-    # Add specific instructions based on question type
-    if instruction_type == "session_reference":
-        base_instruction += """
-🎯 SESSION REFERENCE QUESTION: The user is asking about our previous conversation.
-- Use the conversation context above to answer their question
-- Be specific about what was discussed before
-- Reference exact questions and topics from the session
-- If they ask about "first question", tell them exactly what it was
+    # Handle general follow-up questions
+    elif is_followup and conversation_history:
+        return f"""# Follow-up Response
+
+## Your Question: "{user_question}"
+
+I can see this is a follow-up to our previous conversation where you asked about: **"{conversation_history[-1].question}"**
+
+{rag_context if rag_context else "I'd be happy to help with your follow-up question. Could you provide a bit more detail about what specific aspect you'd like me to address?"}
+
+### Previous Context
+""" + "\n".join([f"- **Q{i+1}:** {turn.question}" for i, turn in enumerate(conversation_history[-2:])]) + """
+
+### How I Can Help
+Feel free to ask more specific questions about any of the topics we've discussed, or let me know if you need clarification on anything!
 """
     
-    elif instruction_type == "follow_up_immigration":
-        base_instruction += """
-🎯 IMMIGRATION FOLLOW-UP: The user is asking a follow-up immigration question.
-- Use both the conversation context AND immigration knowledge
-- Reference what was discussed before when relevant
-- Build upon previous answers to provide continuity
-- Provide specific immigration guidance for their follow-up
-"""
-    
-    elif instruction_type == "fee_inquiry":
-        base_instruction += """
-🎯 FEE QUESTION: The user is asking about immigration costs.
-- Reference any visa types discussed in previous conversation
-- Provide current fee information
-- Explain what the fees cover
-- Include disclaimer about checking official sources
-"""
-    
+    # Handle new questions
     else:
-        base_instruction += """
-🎯 GENERAL IMMIGRATION QUESTION: Provide comprehensive immigration guidance.
-- Use the immigration knowledge provided
-- Reference conversation context if relevant
-- Provide accurate, helpful information
-- Include appropriate disclaimers
-"""
-    
-    base_instruction += """
+        return f"""# Immigration Information
 
-RESPONSE FORMAT:
-- Use clear markdown formatting
-- Start with a direct answer to their question
-- Include relevant details and context
-- Add official resource links
-- Keep it conversational and helpful
+## Your Question: "{user_question}"
 
-CRITICAL: If this is a follow-up question, reference the previous conversation naturally.
+{rag_context if rag_context else f"I understand you're asking about {user_question}. While I don't have specific information immediately available, I can guide you to the right resources."}
+
+## Official Immigration Resources
+- **USCIS Website:** https://www.uscis.gov - Complete immigration information
+- **USCIS Contact Center:** https://www.uscis.gov/contactcenter - Phone support  
+- **Forms and Fees:** https://www.uscis.gov/forms - Official forms and current fees
+
+## Next Steps
+1. Visit the USCIS website for detailed information
+2. Contact USCIS directly for specific guidance
+3. Consider consulting with a qualified immigration attorney
+
+*Always verify information with official USCIS sources for the most current requirements.*
 """
-    
-    return base_instruction
