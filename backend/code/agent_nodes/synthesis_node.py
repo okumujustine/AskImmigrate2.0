@@ -1,3 +1,5 @@
+# New Synthesis code
+
 from typing import Dict, Any
 from backend.code.prompt_builder import build_prompt_from_config
 from backend.code.agentic_state import ImmigrationState
@@ -44,38 +46,66 @@ def create_spanish_native_prompt(user_question: str, rag_context: str, session_c
                 tools_context += f"- {tool_name}: {str(result)[:200]}...\n"
         tools_context += "\n"
     
-    # Create comprehensive Spanish prompt
-    prompt = f"""Responde esta pregunta sobre inmigración estadounidense en español profesional y preciso:
+    # Manager guidance context
+    manager_guidance = ""
+    if manager_decision:
+        manager_guidance = f"ORIENTACIÓN ESTRATÉGICA:\n{manager_decision[:300]}...\n\n"
+    
+    # Create comprehensive Spanish prompt using synthesis agent guidelines
+    prompt = f"""Eres un asistente experto en inmigración estadounidense que proporciona respuestas precisas y confiables basadas en fuentes oficiales.
 
 PREGUNTA DEL USUARIO: "{user_question}"
 
-{spanish_context}{knowledge_context}{tools_context}
+{spanish_context}{knowledge_context}{tools_context}{manager_guidance}
 
-INSTRUCCIONES ESPECÍFICAS:
-- Responde SIEMPRE en español claro y profesional
-- Mantén nombres oficiales de formularios en inglés (I-20, I-94, I-485, etc.)
-- Usa terminología de inmigración precisa
-- Proporciona información específica y accionable
-- Incluye recursos oficiales cuando sea apropiado
-- Usa formato markdown con ## para títulos principales
-- Organiza información en listas cuando sea útil
-- Usa **negrita** para información importante
+INSTRUCCIONES CRÍTICAS DE RESPUESTA:
+1. VALIDACIÓN DE FUENTES (OBLIGATORIO):
+   - SOLO usa fuentes gubernamentales oficiales (USCIS.gov, Travel.state.gov, DHS.gov)
+   - Mantén nombres oficiales de formularios en inglés (I-20, I-94, I-485, etc.)
+   - Para cualquier información no gubernamental, declara: "Esto debe verificarse en USCIS.gov"
+   - Nunca digas "según mi conocimiento" o similares
 
-Si esta es una pregunta de seguimiento basada en el contexto de la conversación, refiérete específicamente a lo que se discutió anteriormente.
+2. CALIBRACIÓN DE CONFIANZA:
+   - Inicia claramente: "Basado en la orientación oficial de USCIS..."
+   - Para información definitiva (.gov): Sé directo y autoritativo
+   - Para procesos generales: Reconoce posibles cambios
+   - Para áreas inciertas: Recomienda verificación en USCIS
 
-Responde de manera completa y útil en español:"""
+3. FORMATO DE RESPUESTA:
+   - Declaración de autoridad (requerida): "Basado en [fuente] de [fecha]..."
+   - Resumen ejecutivo: Un párrafo claro y autoritativo
+   - Explicación detallada con viñetas (3-5 puntos clave)
+   - Consideraciones importantes: Criterios de elegibilidad, restricciones, próximos pasos
+   - Recursos adicionales: Páginas relevantes de USCIS, formularios requeridos
+
+4. FUENTES AUTORIZADAS ÚNICAMENTE:
+   - USCIS.gov (fuente principal)
+   - Travel.state.gov (información de visas)
+   - DHS.gov, DOL.gov, ICE.gov
+   - NUNCA referencias sitios no gubernamentales, blogs, instituciones educativas
+
+5. PROHIBIDO:
+   - Referencias a sitios web no gubernamentales
+   - Sitios web universitarios (incluso para visas de estudiante)
+   - Sitios web de firmas de abogados de inmigración
+   - Servicios de inmigración de terceros
+   - "Según mi fecha límite de conocimiento" en cualquier forma
+
+Usa terminología de inmigración precisa en español, mantén un tono formal profesional apropiado para comunicaciones gubernamentales, y organiza la información claramente con markdown.
+
+Si esta es una pregunta de seguimiento basada en el contexto de conversación, refiérete específicamente a lo discutido anteriormente.
+
+Responde de manera completa, precisa y útil en español profesional:"""
     
     return prompt
 
 def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
     """
-    Strategic Synthesis Agent with multilingual support.
+    Strategic Synthesis Agent with English + Spanish support.
     
-    Args:
-        state: Immigration state with user input and analysis results
-        
-    Returns:
-        Synthesis results with final response and metadata
+    Spanish: Native generation + English fallback
+    English: Direct generation  
+    Other languages: English response with explanation
     """
     
     if state.get("synthesis_approved", False):
@@ -121,7 +151,7 @@ def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
                 conversation_history, is_followup, session_id, user_question
             )
         
-        # Step 3: Get language info and determine response strategy (NEW)
+        # Step 3: Get language info and determine response strategy
         language_info = state.get("language_info", {"language": "en"})
         target_language = language_info.get("language", "en")
         requires_multilingual = target_language != "en"
@@ -134,60 +164,95 @@ def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
             multilingual_available=MULTILINGUAL_AVAILABLE
         )
         
-        # Step 4: Generate response based on language (UPDATED)
+        # Step 4: FIXED MULTILINGUAL GENERATION
         synthesis_content = ""
         translation_info = None
         
-        if requires_multilingual and MULTILINGUAL_AVAILABLE and target_language == "es":
-            # Use native Spanish LLM for best quality
+        if target_language == "es":
+            # SPANISH: Native generation + English fallback
             synthesis_logger.info("using_native_spanish_generation", session_id=session_id)
             
             try:
-                # Build Spanish-specific prompt
+                # Method 1: Direct Spanish generation (like English approach)
                 spanish_prompt = create_spanish_native_prompt(
                     user_question, rag_context, session_context, workflow_parameters, 
                     manager_decision, tool_results
                 )
                 
-                # Run async function in sync context
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    translation_result = loop.run_until_complete(
-                        translation_service.get_native_response(spanish_prompt, "es")
-                    )
-                    synthesis_content = translation_result.translated_text
-                    translation_info = {
-                        "method": translation_result.translation_method,
-                        "confidence": translation_result.confidence,
-                        "processing_time": translation_result.processing_time,
-                        "native_response": True
-                    }
-                    
-                    synthesis_logger.info(
-                        "native_spanish_response_generated",
-                        session_id=session_id,
-                        response_length=len(synthesis_content),
-                        confidence=translation_result.confidence
-                    )
-                finally:
-                    loop.close()
+                # Use same LLM as English generation
+                llm = get_llm(config.get("llm", "gpt-4o-mini"))
+                response = llm.invoke(spanish_prompt)
+                synthesis_content = response.content if hasattr(response, 'content') else str(response)
+                
+                # Validate Spanish response
+                if not synthesis_content or len(synthesis_content.strip()) < 50:
+                    raise ValueError("Spanish response too short")
+                
+                translation_info = {
+                    "method": "native_spanish_llm",
+                    "confidence": 0.95,
+                    "response_length": len(synthesis_content)
+                }
+                
+                synthesis_logger.info(
+                    "native_spanish_generation_successful", 
+                    session_id=session_id,
+                    response_length=len(synthesis_content)
+                )
                     
             except Exception as e:
-                synthesis_logger.error(
-                    "native_spanish_generation_failed",
+                # Method 2: English fallback
+                synthesis_logger.warning(
+                    "spanish_generation_failed_using_english_fallback",
                     session_id=session_id,
                     error=str(e)
                 )
-                # Fallback to English generation + translation
-                synthesis_content = ""
+                synthesis_content = ""  # Will trigger English generation below
         
-        # Step 5: Fallback to English generation if needed (UPDATED)
+        elif target_language != "en":
+            # OTHER LANGUAGES: English response with multilingual note
+            synthesis_logger.info(
+                "using_english_with_multilingual_note", 
+                session_id=session_id, 
+                target_language=target_language
+            )
+            
+            # Note explaining language support
+            multilingual_note = f"""*I detected your language preference, but I currently provide detailed responses in English and Spanish only. For maximum accuracy of immigration information, I'm responding in English. You can also ask your question in Spanish (español) for a native Spanish response.*
+
+---
+
+"""
+            
+            # Generate English response
+            english_content = ""
+            try:
+                prompt = create_dynamic_synthesis_prompt(
+                    user_question, rag_context, session_context, workflow_parameters, 
+                    manager_decision, tool_results
+                )
+                
+                llm = get_llm(config.get("llm", "gpt-4o-mini"))
+                response = llm.invoke(prompt)
+                english_content = response.content if hasattr(response, 'content') else str(response)
+                
+            except Exception as e:
+                synthesis_logger.error("english_generation_failed", error=str(e))
+                english_content = ""
+            
+            synthesis_content = multilingual_note + english_content if english_content else ""
+            translation_info = {
+                "method": f"english_with_{target_language}_note",
+                "original_language": target_language,
+                "response_language": "en"
+            }
+        
+        # Step 5: English generation (original logic OR fallback)
         if not synthesis_content:
             synthesis_logger.info("using_english_generation", session_id=session_id)
             
             try:
-                # Create English prompt
+                # Create English prompt (existing logic)
                 prompt = create_dynamic_synthesis_prompt(
                     user_question, rag_context, session_context, workflow_parameters, 
                     manager_decision, tool_results
@@ -196,57 +261,20 @@ def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
                 llm = get_llm(config.get("llm", "gpt-4o-mini"))
                 with PerformanceTimer(synthesis_logger, "llm_generation", session_id=session_id):
                     response = llm.invoke(prompt)
-                    english_content = response.content if hasattr(response, 'content') else str(response)
+                    synthesis_content = response.content if hasattr(response, 'content') else str(response)
                 
-                # Translate if needed (NEW)
-                if requires_multilingual and MULTILINGUAL_AVAILABLE and english_content:
-                    synthesis_logger.info("translating_english_to_target", 
-                                        session_id=session_id, 
-                                        target_language=target_language)
-                    
-                    try:
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        try:
-                            translation_result = loop.run_until_complete(
-                                translation_service.translate_text(
-                                    text=english_content,
-                                    target_lang=target_language,
-                                    source_lang="en",
-                                    use_immigration_context=True
-                                )
-                            )
-                            synthesis_content = translation_result.translated_text
-                            translation_info = {
-                                "method": translation_result.translation_method,
-                                "confidence": translation_result.confidence,
-                                "processing_time": translation_result.processing_time,
-                                "translated_from": "en"
-                            }
-                            
-                            synthesis_logger.info(
-                                "translation_completed",
-                                session_id=session_id,
-                                target_language=target_language,
-                                response_length=len(synthesis_content)
-                            )
-                        finally:
-                            loop.close()
-                            
-                    except Exception as e:
-                        synthesis_logger.error(
-                            "translation_failed_using_english",
-                            session_id=session_id,
-                            error=str(e)
-                        )
-                        synthesis_content = english_content
-                        translation_info = {
-                            "method": "english_fallback_due_to_translation_error",
-                            "error": str(e)
-                        }
-                else:
-                    synthesis_content = english_content
-                    translation_info = {"method": "english_native"} if not requires_multilingual else None
+                if not translation_info:
+                    translation_info = {"method": "english_native"}
+                elif translation_info.get("method") == "native_spanish_llm":
+                    # This was a Spanish fallback
+                    translation_info["method"] = "spanish_failed_english_fallback"
+                    translation_info["spanish_error"] = "Spanish generation failed, using English"
+                
+                synthesis_logger.info(
+                    "english_generation_successful", 
+                    session_id=session_id,
+                    response_length=len(synthesis_content)
+                )
                 
             except Exception as e:
                 synthesis_logger.error(
@@ -256,7 +284,7 @@ def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
                 )
                 synthesis_content = ""
         
-        # Step 6: Fallback response if everything failed (UPDATED)
+        # Step 6: Fallback response if everything failed
         if not synthesis_content or len(synthesis_content.strip()) < 20:
             synthesis_logger.warning(
                 "using_fallback_response",
@@ -269,14 +297,14 @@ def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
             if not translation_info:
                 translation_info = {"method": "fallback_response"}
         
-        # Step 7: Return results (UPDATED)
+        # Step 7: Return results
         synthesis_logger.info(
             "synthesis_completed_successfully",
             session_id=session_id,
             final_response_length=len(synthesis_content),
-            tools_used_count=len(tools_used),
             target_language=target_language,
-            translation_applied=bool(translation_info)
+            generation_method=translation_info.get("method", "unknown") if translation_info else "unknown",
+            tools_used_count=len(tools_used)
         )
         
         return {
@@ -288,13 +316,13 @@ def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
             "synthesis_metadata": {
                 "session_aware_response": is_followup,
                 "conversation_history_used": len(conversation_history),
-                "response_type": "strategic_synthesis",
+                "response_type": "english_spanish_multilingual",
                 "manager_guided": bool(manager_decision),
                 "tools_executed": len(tools_used),
-                "user_language": target_language,  # NEW
-                "requires_translation": requires_multilingual,  # NEW
-                "translation_info": translation_info,  # NEW
-                "multilingual_enabled": MULTILINGUAL_AVAILABLE,  # NEW
+                "user_language": target_language,
+                "response_language": target_language if target_language in ["en", "es"] else "en",
+                "generation_metadata": translation_info,
+                "multilingual_enabled": MULTILINGUAL_AVAILABLE,
                 "processing_successful": True
             }
         }
@@ -315,7 +343,7 @@ def create_error_response(error_message: str, session_id: str, state: Immigratio
     user_question = state.get("text", "") if state else ""
     language = state.get("language_info", {}).get("language", "en") if state else "en"
     
-    # Language-specific error messages (NEW)
+    # Language-specific error messages
     if language == "es":
         fallback_text = f"""# Error en el Procesamiento
 
@@ -328,6 +356,22 @@ Disculpe, pero encontré un problema técnico procesando su pregunta: {error_mes
 - **Centro de Contacto:** https://www.uscis.gov/es/contactcenter
 
 Por favor, intente de nuevo más tarde."""
+    elif language != "en":
+        fallback_text = f"""*I detected your language preference, but I can currently provide detailed responses in English and Spanish only. For maximum accuracy of immigration information, I'm responding in English.*
+
+---
+
+# Processing Error
+
+## Your Question: "{user_question}"
+
+I apologize, but I encountered a technical issue processing your question: {error_message}
+
+## Alternative Resources:
+- **USCIS Website:** https://www.uscis.gov
+- **USCIS Contact Center:** https://www.uscis.gov/contactcenter
+
+Please try again later."""
     else:
         fallback_text = f"""# Processing Error
 
@@ -351,8 +395,8 @@ Please try again later."""
             "response_type": "error_response",
             "error_message": error_message,
             "processing_successful": False,
-            "user_language": language,  # NEW
-            "multilingual_enabled": MULTILINGUAL_AVAILABLE  # NEW
+            "user_language": language,
+            "multilingual_enabled": MULTILINGUAL_AVAILABLE
         }
     }
 
@@ -361,7 +405,7 @@ def create_fallback_response(user_question, conversation_history, is_followup, r
     
     question_lower = user_question.lower()
     
-    # Determine response language and templates (NEW)
+    # Determine response language and templates
     if language == "es":
         templates = {
             "session_title": "Su Historial de Conversación",
@@ -380,6 +424,40 @@ def create_fallback_response(user_question, conversation_history, is_followup, r
             "contact_center": "Centro de Contacto de USCIS:",
             "forms_fees": "Formularios y Tarifas:"
         }
+        uscis_url = "https://www.uscis.gov/es"
+        contact_url = "https://www.uscis.gov/es/contactcenter"
+        forms_url = "https://www.uscis.gov/es/formularios"
+    elif language != "en":
+        # For non-English, non-Spanish: English response with multilingual note
+        templates = {
+            "understanding": "I understand you're asking about immigration.",
+            "language_note": f"*I detected your language preference, but I currently provide detailed responses in English and Spanish only. For maximum accuracy, I'm responding in English.*",
+            "no_specific_info": "While I don't have specific information immediately available, I can guide you to the right resources.",
+            "official_resources": "Official Resources:",
+            "website": "USCIS Website:",
+            "verify": "Always verify information with official USCIS sources."
+        }
+        uscis_url = "https://www.uscis.gov"
+        contact_url = "https://www.uscis.gov/contactcenter"
+        
+        response_text = rag_context if rag_context else f"{templates['understanding']} {templates['no_specific_info']}"
+        
+        return f"""{templates["language_note"]}
+
+---
+
+# Immigration Information
+
+## Your Question: "{user_question}"
+
+{response_text}
+
+## {templates["official_resources"]}
+- **{templates["website"]}** {uscis_url}
+- **Contact Center:** {contact_url}
+
+{templates["verify"]}
+"""
     else:
         templates = {
             "session_title": "Your Conversation History",
@@ -398,8 +476,11 @@ def create_fallback_response(user_question, conversation_history, is_followup, r
             "contact_center": "USCIS Contact Center:",
             "forms_fees": "Forms and Fees:"
         }
+        uscis_url = "https://www.uscis.gov"
+        contact_url = "https://www.uscis.gov/contactcenter"
+        forms_url = "https://www.uscis.gov/forms"
     
-    # Handle session reference questions (UPDATED for multilingual)
+    # Handle session reference questions (multilingual)
     if is_followup and conversation_history and any(phrase in question_lower for phrase in [
         "first question", "what did i ask", "previous", "earlier", "what was",
         "primera pregunta", "qué pregunté", "anterior", "antes"
@@ -425,15 +506,11 @@ def create_fallback_response(user_question, conversation_history, is_followup, r
 {templates["verify"]}
 """
     
-    # Default immigration info response (UPDATED for multilingual)
+    # Default immigration info response (multilingual)
     else:
-        uscis_url = "https://www.uscis.gov" + ("" if language == "en" else "/es")
-        contact_url = "https://www.uscis.gov/" + ("contactcenter" if language == "en" else "es/contactcenter")
-        forms_url = "https://www.uscis.gov/" + ("forms" if language == "en" else "es/formularios")
-        
         response_text = rag_context if rag_context else f"{templates['understanding']} {templates['no_specific_info']}"
         
-        return f"""# {templates["immigration_info"]}
+        return f"""# {templates.get("immigration_info", "Immigration Information")}
 
 ## {templates["your_question"]} "{user_question}"
 
@@ -441,8 +518,8 @@ def create_fallback_response(user_question, conversation_history, is_followup, r
 
 ## {templates["official_resources"]}
 - **{templates["website"]}** {uscis_url}
-- **{templates["contact_center"]}** {contact_url}
-- **{templates["forms_fees"]}** {forms_url}
+- **{templates.get("contact_center", "Contact Center")}** {contact_url}
+- **{templates.get("forms_fees", "Forms and Fees")}** {forms_url if language == "es" else "https://www.uscis.gov/forms"}
 
 {templates["verify"]}
 """
@@ -596,11 +673,11 @@ def parse_tool_recommendations(manager_decision: str, user_question: str) -> lis
         recommended_tools.append("rag_retrieval_tool")
         
         # Fee/cost questions need web search and fee calculator
-        if any(word in question_lower for word in ["fee", "cost", "price", "how much", "filing fee"]):
+        if any(word in question_lower for word in ["fee", "cost", "price", "how much", "filing fee", "cuesta", "precio"]):
             recommended_tools.extend(["web_search_tool", "fee_calculator_tool"])
         
         # Current/recent information needs web search
-        elif any(word in question_lower for word in ["current", "latest", "recent", "2024", "new", "update"]):
+        elif any(word in question_lower for word in ["current", "latest", "recent", "2024", "2025", "new", "update", "actual", "reciente"]):
             recommended_tools.append("web_search_tool")
     
     # Remove duplicates and clean up
@@ -670,75 +747,3 @@ def create_dynamic_synthesis_prompt(user_question, rag_context, session_context,
 Remember: If web search results are provided above, prioritize that current information over any older knowledge."""
     
     return full_prompt
-
-
-def create_fallback_response(user_question, conversation_history, is_followup, rag_context):
-    """Create a smart fallback response when LLM fails."""
-    
-    question_lower = user_question.lower()
-    
-    # Handle session reference questions directly
-    if is_followup and conversation_history and any(phrase in question_lower for phrase in [
-        "first question", "what did i ask", "previous", "earlier", "what was"
-    ]):
-        
-        first_turn = conversation_history[0]
-        
-        return f"""# Your Conversation History
-
-## Your Question: "{user_question}"
-
-Based on our conversation history, here's what I can tell you:
-
-### Your First Question
-Your first question was: **"{first_turn.question}"**
-
-### Our Conversation So Far
-We've had {len(conversation_history)} {'turn' if len(conversation_history) == 1 else 'turns'} in this conversation:
-
-""" + "\n".join([f"**Turn {i+1}:** {turn.question}" for i, turn in enumerate(conversation_history)]) + f"""
-
-### Current Session
-- Session ID: {conversation_history[0].timestamp.split('T')[0] if conversation_history else 'Unknown'}
-- Total questions asked: {len(conversation_history)}
-
-Is there anything specific about our previous conversation you'd like me to clarify or expand on?
-"""
-    
-    # Handle general follow-up questions
-    elif is_followup and conversation_history:
-        return f"""# Follow-up Response
-
-## Your Question: "{user_question}"
-
-I can see this is a follow-up to our previous conversation where you asked about: **"{conversation_history[-1].question}"**
-
-{rag_context if rag_context else "I'd be happy to help with your follow-up question. Could you provide a bit more detail about what specific aspect you'd like me to address?"}
-
-### Previous Context
-""" + "\n".join([f"- **Q{i+1}:** {turn.question}" for i, turn in enumerate(conversation_history[-2:])]) + """
-
-### How I Can Help
-Feel free to ask more specific questions about any of the topics we've discussed, or let me know if you need clarification on anything!
-"""
-    
-    # Handle new questions
-    else:
-        return f"""# Immigration Information
-
-## Your Question: "{user_question}"
-
-{rag_context if rag_context else f"I understand you're asking about {user_question}. While I don't have specific information immediately available, I can guide you to the right resources."}
-
-## Official Immigration Resources
-- **USCIS Website:** https://www.uscis.gov - Complete immigration information
-- **USCIS Contact Center:** https://www.uscis.gov/contactcenter - Phone support  
-- **Forms and Fees:** https://www.uscis.gov/forms - Official forms and current fees
-
-## Next Steps
-1. Visit the USCIS website for detailed information
-2. Contact USCIS directly for specific guidance
-3. Consider consulting with a qualified immigration attorney
-
-*Always verify information with official USCIS sources for the most current requirements.*
-"""
