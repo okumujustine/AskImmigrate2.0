@@ -16,7 +16,7 @@ def reviewer_node(state: ImmigrationState) -> Dict[str, Any]:
     """
     # Track revision rounds
     revision_round = state.get("revision_round", 0) + 1
-    max_revisions = 2  # Limit to prevent infinite loops
+    max_revisions = 2  # Limit to prevent infinite loops - quality control needs multiple rounds
     session_id = state.get("session_id", "")
 
     reviewer_logger.info(

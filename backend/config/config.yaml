@@ -1,14 +1,14 @@
-llm: gpt-4o-mini
-#llm: llama3-8b-8192
+#llm: gpt-4o-mini
+llm: llama3-8b-8192
 
 vectordb:
   provider: "chromadb"
-  threshold: 0.5
-  n_results: 5
+  threshold: 0.6
+  n_results: 3
 
 memory_strategies:
-  trimming_window_size: 6 # Number of messages to keep in trimming strategy (6 would be 3 pairs of Q/A)
-  summarization_max_tokens: 1000 # Max tokens before summarization kicks in
+  trimming_window_size: 4 # Number of messages to keep in trimming strategy (4 would be 2 pairs of Q/A)
+  summarization_max_tokens: 800 # Max tokens before summarization kicks in
 
 
 reasoning_strategies:
@@ -51,5 +51,14 @@ tools_enabled:
   manager_node: [rag_retriever]
   rag_retriever_node: []
   tool: [rag_retriever, web_search_tool, fee_calculator_tool]
-  synthesis_node: [web_search_tool]
+  synthesis_node: [rag_retriever, web_search_tool, fee_calculator_tool]
   Reviewer_node: [fee_calculator_tool]
+
+# Performance optimizations
+performance:
+  enable_tool_caching: true
+  enable_rag_caching: true
+  parallel_tool_execution: false  # Set to true if tools are independent
+  max_concurrent_tools: 2
+  timeout_seconds: 30
+  cache_ttl_seconds: 300  # 5 minute cache TTL
