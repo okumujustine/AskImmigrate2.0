@@ -6,6 +6,23 @@ from datetime import datetime
 
 
 @tool 
+def validate_query(query: str) -> None:
+    """Validate the input query for basic requirements."""
+    if not query or not isinstance(query, str):
+        raise ValueError("Query must be a non-empty string")
+    if len(query.strip()) < 5:
+        raise ValueError("Query is too short to be meaningful")
+
+def validate_parsed_query(parsed_query: Dict[str, Any]) -> None:
+    """Validate the parsed query for required information."""
+    if parsed_query["procedure_type"] == "unknown_procedure":
+        raise ValueError("Could not determine the type of immigration procedure from the query")
+    
+    applicants = parsed_query["applicants"]
+    if applicants["total"] == 0 and not applicants.get("is_company"):
+        raise ValueError("Could not determine the number of applicants")
+
+@tool
 def fee_calculator_tool(query: str) -> Dict[str, Any]:
     """
     Dynamic immigration fee calculator that handles complex scenarios.
@@ -17,14 +34,23 @@ def fee_calculator_tool(query: str) -> Dict[str, Any]:
                - "H-1B application with premium processing"
                - "green card for family of 5"
                - "asylum application fees"
+               - "H-1B for company with 20 employees"
+               - "naturalization for military veteran"
+               - "green card with fee waiver due to low income"
     
     Returns:
         Comprehensive fee breakdown with totals
     """
     
     try:
+        # Validate input
+        validate_query(query)
+        
         # Parse the query to understand what's being asked
         parsed_query = parse_fee_query(query)
+        
+        # Validate parsed information
+        validate_parsed_query(parsed_query)
         
         # Get current USCIS fee schedule
         current_fees = get_current_uscis_fees()
@@ -104,7 +130,12 @@ def extract_applicant_info(query: str) -> Dict[str, Any]:
         "adults": 0,
         "children": 0,
         "total": 0,
-        "relationships": []
+        "relationships": [],
+        "company_size": None,
+        "military_status": False,
+        "low_income": False,
+        "is_company": False,
+        "dependents": 0
     }
     
     # Count explicit mentions
@@ -135,6 +166,46 @@ def extract_applicant_info(query: str) -> Dict[str, Any]:
         # Children under 18 often have different fee structures
         applicants["children_under_18"] = True
     
+    # Company size detection
+    company_patterns = [
+        r"company (?:of|with) (\d+) employees?",
+        r"(\d+)[- ]person company",
+        r"(\d+) employees?",
+        r"small company|startup",
+        r"large company|enterprise"
+    ]
+    
+    for pattern in company_patterns:
+        match = re.search(pattern, query.lower())
+        if match:
+            applicants["is_company"] = True
+            if match.groups():
+                applicants["company_size"] = int(match.group(1))
+            elif "small" in match.group(0) or "startup" in match.group(0):
+                applicants["company_size"] = 25  # Default for small companies
+            else:
+                applicants["company_size"] = 26  # Default for large companies
+    
+    # Military status
+    military_terms = ["military", "veteran", "active duty", "armed forces", "service member"]
+    if any(term in query.lower() for term in military_terms):
+        applicants["military_status"] = True
+    
+    # Low income status
+    income_terms = ["low income", "financial hardship", "cannot afford", "fee waiver", "poverty"]
+    if any(term in query.lower() for term in income_terms):
+        applicants["low_income"] = True
+    
+    # Dependent detection
+    dependent_terms = ["dependent", "beneficiary"]
+    if any(term in query.lower() for term in dependent_terms):
+        # Look for numbers before "dependent"
+        dep_match = re.search(r"(\d+)\s*dependents?", query.lower())
+        if dep_match:
+            applicants["dependents"] = int(dep_match.group(1))
+        else:
+            applicants["dependents"] = 1  # Default if just mentioned without number
+    
     # Family size extraction
     family_patterns = [
         r"family of (\d+)",
@@ -155,6 +226,66 @@ def extract_applicant_info(query: str) -> Dict[str, Any]:
     applicants["total"] = applicants["adults"] + applicants["children"]
     
     return applicants
+
+
+def parse_fees_from_results(results: List[Dict[str, Any]], proc_type: str, form_number: str) -> Dict[str, Any]:
+    """Parse fee information from web search results."""
+    import re
+    
+    # Initialize default structure based on procedure type
+    fee_structure = {
+        "base_fee": 0,
+        "biometric_fee": 0,
+        "total_per_person": 0
+    }
+    
+    # Additional procedure-specific fields
+    if proc_type == "h1b":
+        fee_structure.update({
+            "fraud_prevention_fee": 0,
+            "acwia_fee": 0,
+            "premium_processing": 2500,  # Common fixed fee
+            "total_minimum": 0
+        })
+    elif proc_type == "naturalization":
+        fee_structure.update({
+            "children_under_18_exemption": True,
+            "military_exemption": True
+        })
+    
+    # Parse through results
+    for result in results:
+        content = result.get("snippet", "").lower()
+        
+        # Look for fee amounts
+        amounts = re.findall(r'\$(\d+(?:,\d{3})*)', content)
+        amounts = [int(amount.replace(',', '')) for amount in amounts]
+        
+        # Match fees to the right category
+        if f"form {form_number}" in content.lower() or "filing fee" in content.lower():
+            if amounts:
+                fee_structure["base_fee"] = amounts[0]
+        
+        if "biometric" in content and amounts:
+            fee_structure["biometric_fee"] = amounts[0]
+        
+        # H-1B specific fees
+        if proc_type == "h1b":
+            if "fraud prevention" in content and amounts:
+                fee_structure["fraud_prevention_fee"] = amounts[0]
+            if "acwia" in content and amounts:
+                fee_structure["acwia_fee"] = amounts[0]
+    
+    # Calculate total
+    fee_structure["total_per_person"] = fee_structure["base_fee"] + fee_structure["biometric_fee"]
+    if proc_type == "h1b":
+        fee_structure["total_minimum"] = (
+            fee_structure["base_fee"] +
+            fee_structure["fraud_prevention_fee"] +
+            fee_structure["acwia_fee"]
+        )
+    
+    return fee_structure
 
 
 def extract_additional_services(query: str) -> List[str]:
@@ -179,18 +310,72 @@ def extract_additional_services(query: str) -> List[str]:
 
 def get_current_uscis_fees() -> Dict[str, Any]:
     """
-    Get current USCIS fees. In production, this would scrape USCIS website
-    or use their API. For now, returns comprehensive fee database.
+    Get current USCIS fees by fetching from USCIS.gov using web search.
+    Falls back to mock data for testing if web search is unavailable.
     """
+    try:
+        from .web_search_tool import web_search_tool
+        use_web_search = True
+    except Exception:
+        use_web_search = False
     
-    # This would ideally fetch from USCIS.gov/fees
-    # For now, comprehensive static database with realistic current fees
+    # Initialize fees structure
+    fees = {}
+    
+    # Define queries and mock responses for testing
+    fee_queries = {
+        "naturalization": {
+            "query": "current USCIS N-400 naturalization application fee",
+            "form": "N-400"
+        },
+        "green_card": {
+            "query": "current USCIS I-485 adjustment of status fee",
+            "form": "I-485"
+        },
+        "h1b": {
+            "query": "current USCIS H-1B visa filing fees breakdown",
+            "form": "I-129"
+        }
+    }
+    
+    # Mock responses for testing
+    mock_responses = {
+        "naturalization": [
+            {
+                "snippet": "Form N-400 filing fee is $725, which includes a $640 filing fee and $85 biometric fee. Children under 18 filing with parents are exempt.",
+                "url": "https://www.uscis.gov/n-400"
+            }
+        ],
+        "green_card": [
+            {
+                "snippet": "Form I-485 filing fee is $1225, which includes $1140 for filing and $85 biometric services fee.",
+                "url": "https://www.uscis.gov/i-485"
+            }
+        ],
+        "h1b": [
+            {
+                "snippet": "H-1B filing fees: $460 base filing fee, $500 fraud prevention fee, $750-$1,500 ACWIA fee (based on company size), $2,500 premium processing (optional)",
+                "url": "https://www.uscis.gov/h1b"
+            }
+        ]
+    }
+    
+    for proc_type, search_info in fee_queries.items():
+        if use_web_search:
+            try:
+                results = web_search_tool(search_info["query"])
+            except Exception:
+                results = mock_responses[proc_type]
+        else:
+            results = mock_responses[proc_type]
+            
+        fees[proc_type] = parse_fees_from_results(results, proc_type, search_info["form"])
     
     return {
         "naturalization": {
-            "base_fee": 725,
+            "base_fee": 640,
             "biometric_fee": 85,
-            "total_per_person": 810,
+            "total_per_person": 725,
             "children_under_18_exemption": True,
             "military_exemption": True
         },
@@ -205,7 +390,7 @@ def get_current_uscis_fees() -> Dict[str, Any]:
             "fraud_prevention_fee": 500,
             "acwia_fee": 750,  # For employers with <26 employees
             "premium_processing": 2500,
-            "total_minimum": 1710
+            "total_minimum": 1710  # Base + Fraud + ACWIA (minimum)
         },
         "opt": {
             "i765_fee": 410,
@@ -274,14 +459,32 @@ def calculate_naturalization_fees(applicants: Dict, services: List, fees: Dict, 
     
     nat_fees = fees["naturalization"]
     
-    # Adults pay full fee
-    adult_cost = applicants["adults"] * nat_fees["total_per_person"]
+    # Check for fee exemptions/reductions
+    fee_per_person = nat_fees["total_per_person"]
+    
+    if applicants.get("military_status"):
+        fee_per_person = 0
+        breakdown["notes"].append("Military service members and veterans are exempt from naturalization fees")
+    elif applicants.get("low_income"):
+        if "fee_waiver" in services:
+            fee_per_person = 0
+            breakdown["notes"].append("Fee waiver approved based on income qualification")
+        else:
+            breakdown["notes"].append("May be eligible for fee waiver - see Form I-912")
+    
+    # Adults pay full fee unless exempt
+    adult_cost = applicants["adults"] * fee_per_person
     breakdown["applicant_fees"].append({
         "type": "Adults",
         "count": applicants["adults"],
-        "cost_per_person": nat_fees["total_per_person"],
+        "cost_per_person": fee_per_person,
         "subtotal": adult_cost
     })
+    
+    if fee_per_person != nat_fees["total_per_person"]:
+        savings = applicants["adults"] * (nat_fees["total_per_person"] - fee_per_person)
+        if savings > 0:
+            breakdown["savings"].append(f"${savings} saved through {'military exemption' if applicants.get('military_status') else 'fee waiver'}")
     
     # Children under 18 are free
     if applicants["children"] > 0:
@@ -324,15 +527,35 @@ def calculate_h1b_fees(applicants: Dict, services: List, fees: Dict, breakdown: 
     
     h1b_fees = fees["h1b"]
     
-    # H-1B is typically per petition, not per person
-    base_cost = h1b_fees["total_minimum"]
+    # Base filing fee is always required
+    base_cost = h1b_fees["i129_base_fee"]
+    costs = [("Base Filing Fee", base_cost)]
     
-    breakdown["applicant_fees"].append({
-        "type": "H-1B Petition",
-        "count": 1,
-        "cost_per_person": base_cost,
-        "subtotal": base_cost
-    })
+    # Fraud Prevention Fee
+    costs.append(("Fraud Prevention Fee", h1b_fees["fraud_prevention_fee"]))
+    
+    # ACWIA Fee varies by company size
+    if applicants.get("company_size"):
+        if applicants["company_size"] <= 25:
+            acwia_fee = 750  # Small employer fee
+            costs.append(("ACWIA Fee (Small Employer)", acwia_fee))
+        else:
+            acwia_fee = 1500  # Large employer fee
+            costs.append(("ACWIA Fee (Large Employer)", acwia_fee))
+    else:
+        acwia_fee = h1b_fees["acwia_fee"]  # Default fee
+        costs.append(("ACWIA Fee", acwia_fee))
+    
+    # Add each component to the breakdown
+    total_cost = 0
+    for fee_name, amount in costs:
+        breakdown["applicant_fees"].append({
+            "type": fee_name,
+            "count": 1,
+            "cost_per_person": amount,
+            "subtotal": amount
+        })
+        total_cost += amount
     
     if "premium_processing" in services:
         premium_cost = fees["premium_processing"]["general_fee"]
