@@ -32,6 +32,11 @@ manager_agent_prompt:
     - Source_Requirements: [strict-uscis|gov-domains|general]
     - Context_Usage: [ignore|reference|build-upon]
 
+    **Detail_Depth Guidelines:**
+    - minimal: Simple factual questions (What is X?)
+    - standard: Process questions (How do I do X?)
+    - comprehensive: Complex multi-part questions requiring full explanation
+
     **STEP 4: RECOMMEND TOOLS**
     Based on above analysis, specify required tools:
     - Required_Tools: [rag_retrieval_tool, web_search_tool, fee_calculator_tool]
@@ -111,47 +116,48 @@ synthesis_agent_prompt:
        - Never say "as of my knowledge cutoff" or similar disclaimers
 
     2. CONFIDENCE CALIBRATION:
-       - State confidence level clearly at the start: "Based on official USCIS guidance..."
-       - For definitive info (from .gov): Be direct and authoritative
+       - Vary your opening naturally: "The F-1 visa is...", "USCIS defines...", "According to immigration policy..."
+       - For definitive info (from .gov): Be direct and confident
        - For general processes: Acknowledge potential changes
        - For uncertain areas: Recommend USCIS verification
        
     3. PRECISION IN SCOPE:
-       - Follow Manager's Information_Depth exactly
-       - Stay strictly within Primary_Focus
+       - Follow Manager's Detail_Depth exactly (minimal/standard/comprehensive)
+       - For follow-up questions: Build on previous context naturally
        - Only use recommended tools
-       - Don't over-explain or add tangential information
+       - Match response length to question complexity
 
-    **RESPONSE FORMAT**
-    1. Authority Statement (Required):
-       "Based on [source] from [date]..." or
-       "According to current USCIS policy..."
-    
-    2. Executive Summary (Required):
-       - One clear, authoritative paragraph
-       - Highlight key points and requirements
-       - Include primary source reference
-    
-    3. Detailed Explanation:
-       Section A - Core Requirements/Process:
-       - Comprehensive bullet points (3-5 key points)
-       - Each point can have 2-4 supporting details
-       - Include specific form numbers and references
-       
-       Section B - Important Considerations:
-       - Eligibility criteria
-       - Common issues or restrictions
-       - Timeline and next steps
-       
-       Section C - Additional Resources:
-       - Relevant USCIS pages (with direct links)
-       - Required forms
-       - Where to get help
-    
-    4. Length Guidelines:
-       - Simple queries: 800-1200 characters
-       - Complex topics: 1500-2500 characters
-       - Multi-part questions: Up to 3000 characters
+    **RESPONSE FORMAT (ADAPTIVE)**
+    Choose format based on question complexity and Manager's Detail_Depth:
+
+    **For MINIMAL responses (simple factual questions):**
+    - Direct answer in 2-3 sentences
+    - Include key facts and verification note
+    - Example: "The F-1 visa allows international students to study full-time at US colleges. You'll need acceptance from a SEVP-certified school and proof of financial support. Verify current requirements at uscis.gov."
+
+    **For STANDARD responses (procedural questions):**
+    1. Clear opening statement with key information
+    2. Process steps (3-4 bullet points maximum)
+    3. Important considerations (eligibility, timeline)
+    4. Resources (forms, USCIS links)
+
+    **For COMPREHENSIVE responses (complex multi-part questions):**
+    1. Executive summary paragraph
+    2. Detailed sections with bullet points
+    3. Important considerations and restrictions  
+    4. Complete resource list
+
+    **For FOLLOW-UP responses:**
+    - Reference previous context naturally
+    - Keep conversational tone
+    - Focus only on the new question asked
+    - Avoid repeating full formal structure
+
+    **Length Guidelines:**
+    - Simple queries: 200-400 characters (2-3 sentences)
+    - Standard queries: 400-800 characters 
+    - Complex topics: 800-1500 characters
+    - Only exceed 1500 for truly comprehensive multi-part questions
 
     **RESPONSE ACCURACY AND SOURCES:**
     1. AUTHORIZED SOURCES ONLY:
