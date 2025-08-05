@@ -1,5 +1,5 @@
 # =============================================================================
-# AskImmigrate 2.0 - Multilingual Configuration
+# AskImmigrate 2.0 - Multilingual Configuration (Fixed for Groq)
 # =============================================================================
 
 # Supported languages configuration
@@ -48,17 +48,24 @@ supported_languages:
       ui_translation: false
       terminology_support: true
 
-# Translation service configuration
+# Translation service configuration - FIXED FOR GROQ
 translation:
-  default_provider: "openai"  # "openai", "google", "hybrid"
+  default_provider: "groq"  # CHANGED: Use Groq instead of OpenAI
   cache_enabled: true
   cache_ttl_hours: 24
   max_text_length: 5000
   
   # Provider-specific settings
   providers:
-    openai:
-      model: "gpt-4o"
+    groq:  # ADDED: Groq provider configuration
+      model: "llama3-70b-8192"  # Best Groq model for translation
+      temperature: 0.1
+      max_tokens: 2000
+      context_aware: true
+      immigration_specialized: true
+      
+    openai:  # KEPT: As fallback option
+      model: "gpt-4o-mini"  # Changed to mini to avoid rate limits
       temperature: 0.1
       max_tokens: 2000
       context_aware: true
@@ -141,7 +148,7 @@ formatting:
 # Caching configuration
 caching:
   redis:
-    enabled: true
+    enabled: false  # CHANGED: Disabled since Redis not available
     host: "localhost"
     port: 6379
     db: 1
@@ -150,7 +157,7 @@ caching:
     
   # Cache strategies
   strategies:
-    translation_cache: true
+    translation_cache: false  # CHANGED: Disabled since Redis not available
     language_detection_cache: true
     terminology_cache: true
     session_preference_cache: true
@@ -205,7 +212,7 @@ error_handling:
 features:
   auto_language_detection: true
   session_language_persistence: true
-  translation_caching: true
+  translation_caching: false  # CHANGED: Disabled since Redis not available
   quality_feedback_collection: true
   real_time_translation_stats: true
   multilingual_session_analytics: true

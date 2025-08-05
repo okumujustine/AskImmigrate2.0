@@ -1,6 +1,6 @@
 """
 Enhanced Translation Service for AskImmigrate 2.0
-Fixed to use existing LLM system instead of separate OpenAI client
+FIXED: Now uses configuration instead of hardcoded OpenAI
 """
 
 import asyncio
@@ -13,6 +13,8 @@ from enum import Enum
 import redis
 import langdetect
 from backend.code.structured_logging import get_logger
+from backend.code.utils import load_config  # ADDED: Load configuration
+from backend.code.paths import APP_CONFIG_FPATH  # ADDED: Config path
 
 logger = get_logger("translation_service")
 
@@ -38,10 +40,11 @@ class LanguageDetectionResult:
     detection_method: str
 
 class TranslationService:
-    """Enhanced translation service using existing LLM system"""
+    """Enhanced translation service using existing LLM system with proper configuration"""
     
     def __init__(self):
-        # Don't create separate OpenAI client, use the existing LLM system
+        # FIXED: Load configuration instead of hardcoding
+        self.config = load_config(APP_CONFIG_FPATH)
         self.llm_client = None  # Will be set when needed
         
         # Try to initialize Redis cache (optional)
@@ -70,7 +73,7 @@ class TranslationService:
         self.stats = {
             'cache_hits': 0,
             'google_translations': 0,
-            'openai_translations': 0,
+            'groq_translations': 0,  # CHANGED: Track Groq instead of OpenAI
             'native_responses': 0,
             'language_detections': 0,
             'errors': 0
@@ -120,12 +123,14 @@ EJEMPLO DE ESTRUCTURA:
 **Importante:** Siempre verifique la información más reciente en el sitio web oficial de USCIS."""
     
     def _get_llm_client(self):
-        """Get LLM client using the existing system"""
+        """Get LLM client using the existing system with proper configuration"""
         if self.llm_client is None:
             try:
                 from backend.code.llm import get_llm
-                self.llm_client = get_llm("gpt-4o-mini")
-                logger.info("Using existing LLM system for translations")
+                # FIXED: Use configuration instead of hardcoded model
+                model_name = self.config.get("llm", "gpt-4o-mini")
+                self.llm_client = get_llm(model_name)
+                logger.info(f"Using existing LLM system for translations: {model_name}")
             except Exception as e:
                 logger.error(f"Failed to get LLM client: {e}")
                 return None
@@ -198,7 +203,7 @@ EJEMPLO DE ESTRUCTURA:
             # Build the complete prompt
             full_prompt = f"{self.spanish_prompt}\n\nPregunta del usuario: {query}"
             
-            # Use the existing LLM system
+            # Use the existing LLM system (now properly configured)
             response = llm_client.invoke(full_prompt)
             self.stats['native_responses'] += 1
             
@@ -338,7 +343,7 @@ Translation:"""
                     translated_text = response.content if hasattr(response, 'content') else str(response)
                     method = "llm_immigration_context" if use_immigration_context else "llm_translation"
                     confidence = 0.80
-                    self.stats['openai_translations'] += 1
+                    self.stats['groq_translations'] += 1  # CHANGED: Track Groq instead of OpenAI
                     
                 except Exception as e:
                     logger.error(f"LLM translation failed: {e}")
@@ -394,6 +399,7 @@ Translation:"""
             'has_google': self.has_google,
             'has_redis': self.has_redis,
             'has_llm': self._get_llm_client() is not None,
+            'llm_model': self.config.get("llm", "unknown"),  # ADDED: Show which model is configured
             'service_health': self._get_service_health()
         }
     
@@ -443,7 +449,7 @@ def test_translation_service():
         # Test LLM client
         llm_client = service._get_llm_client()
         if llm_client:
-            print("✅ LLM client available")
+            print(f"✅ LLM client available: {service.config.get('llm', 'unknown')}")
         else:
             print("❌ LLM client not available")
             return False
