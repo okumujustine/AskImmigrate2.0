@@ -77,10 +77,7 @@ function App() {
     setExampleQuestions(newExamples);
 
     // Show language change notification
-    const langInfo = multilingualService.getCurrentLanguageInfo();
-    console.log(
-      `${newStrings.languageChanged} ${langInfo?.nativeName || languageCode}`
-    );
+    console.log(`Language changed to ${languageCode}`);
   };
 
   const loadChatSessions = useCallback(async () => {
@@ -94,7 +91,7 @@ function App() {
       console.error("Failed to load chat sessions:", error);
       setError(uiStrings.errorLoading);
     }
-  }, [user.id, uiStrings.errorLoading]);
+  }, [user.id]);
 
   useEffect(() => {
     loadChatSessions();
