@@ -21,6 +21,7 @@ function App() {
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [currentSession, setCurrentSession] = useState<ChatSession | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingStartTime, setLoadingStartTime] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -80,7 +81,9 @@ function App() {
   const handleSendMessage = async (question: string) => {
     if (!question.trim()) return;
 
+    const startTime = Date.now();
     setIsLoading(true);
+    setLoadingStartTime(startTime);
     setError(null);
 
     try {
@@ -114,11 +117,16 @@ function App() {
 
       setChatSessions(updatedSessions);
       setCurrentSession(updatedSession);
+      setIsLoading(false);
+      setLoadingStartTime(0);
     } catch (error) {
       console.error('Failed to send message:', error);
       setError('Failed to send message. Please try again.');
+      setIsLoading(false);
+      setLoadingStartTime(0);
     } finally {
       setIsLoading(false);
+      setLoadingStartTime(0);
     }
   };
 
@@ -143,7 +151,12 @@ function App() {
               {currentSession.messages.map((message) => (
                 <ChatMessage key={message.id} message={message} />
               ))}
-              {isLoading && <LoadingMessage />}
+              {isLoading && <LoadingMessage startTime={loadingStartTime} />}
+              <div ref={messagesEndRef} />
+            </div>
+          ) : isLoading ? (
+            <div className="messages-container">
+              <LoadingMessage startTime={loadingStartTime} />
               <div ref={messagesEndRef} />
             </div>
           ) : (
