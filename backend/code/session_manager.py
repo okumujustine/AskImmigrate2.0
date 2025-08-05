@@ -610,11 +610,26 @@ class SessionManager:
         elif has_strong_followup_words:
             is_followup = True
             reason = "strong follow-up indicators"
-        # 3. Very short questions without immigration terms = might be follow-up
+        # 3. Check for related topics from previous context
+        elif session_context.get("ongoing_topics"):
+            # Extract topics and terms from previous context
+            prev_topics = set(session_context.get("ongoing_topics", []))
+            prev_terms = {term.lower() for topic in prev_topics for term in topic.split()}
+            
+            # Check if current question contains previously discussed terms
+            question_terms = set(question_lower.split())
+            common_terms = prev_terms.intersection(question_terms)
+            
+            if common_terms:
+                is_followup = True
+                reason = f"contains previously discussed terms: {common_terms}"
+            
+        # 4. Very short questions without immigration terms = might be follow-up
         elif is_short_question and not has_immigration_terms and len(current_question.split()) <= 3:
             is_followup = True
             reason = "very short non-immigration question"
-        # 4. Everything else = not follow-up
+            
+        # 5. Everything else = not follow-up
         else:
             is_followup = False
             reason = "appears to be new question"
