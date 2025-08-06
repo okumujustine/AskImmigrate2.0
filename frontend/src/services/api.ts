@@ -159,7 +159,6 @@ const askQuestionStandard = async (
     language: 'en'
   };
 };
-
 // Multilingual API call
 const askQuestionMultilingual = async (
   question: string,
@@ -168,14 +167,29 @@ const askQuestionMultilingual = async (
   detectedLanguage: string,
   clientFingerprint: string
 ): Promise<{ message: Message; sessionId: string; language: string; metadata: any }> => {
-  const requestBody = {
+  const requestBody: {
+    question: string;
+    language: string;
+    client_fingerprint: string;
+    session_id?: string;  // Optional now
+  } = {
     question,
     language: detectedLanguage === 'auto' ? 'auto' : detectedLanguage,
-    session_id: chatSessionId,
     client_fingerprint: clientFingerprint,
   };
 
-  console.log('Making multilingual request:', { language: detectedLanguage, question: question.substring(0, 50) });
+  // CHANGE: Only send session_id if it's a real backend session (not frontend temp)
+  if (chatSessionId && !chatSessionId.startsWith('new-')) {
+    requestBody.session_id = chatSessionId;
+  }
+  // If no valid session_id, backend will create new session
+
+  console.log('Making multilingual request:', { 
+    language: detectedLanguage, 
+    question: question.substring(0, 50),
+    hasSessionId: !!requestBody.session_id,
+    sessionId: requestBody.session_id
+  });
 
   const response = await fetch(`${API_BASE_URL}/api/chat/multilingual`, {
     method: 'POST',
@@ -196,7 +210,8 @@ const askQuestionMultilingual = async (
   console.log('Multilingual response received:', {
     language: data.language,
     method: data.metadata.translation_method,
-    answerLength: data.answer.length
+    answerLength: data.answer.length,
+    returnedSessionId: data.session_id  // Log what session ID backend returned
   });
   
   const message: Message = {
@@ -208,7 +223,7 @@ const askQuestionMultilingual = async (
 
   return {
     message,
-    sessionId: data.session_id,
+    sessionId: data.session_id,  // Use whatever session ID backend returns
     language: data.language,
     metadata: data.metadata
   };
@@ -286,27 +301,6 @@ export const getChatSessions = async (userId: string) => {
   }
 };
 
-export const createNewChatSession = async (userId: string) => {
-  if (USE_MOCK_API) {
-    return {
-      id: `session-${Date.now()}`,
-      userId,
-      title: 'New Chat',
-      createdAt: new Date().toISOString(),
-    };
-  }
-
-  // For our API, new sessions are created automatically when sending the first message
-  const clientFingerprint = getPersistentBrowserFingerprint();
-  const tempSessionId = `new-${clientFingerprint.split('-')[0]}-${Date.now()}`;
-  
-  return {
-    id: tempSessionId,
-    userId,
-    title: 'New Chat',
-    createdAt: new Date().toISOString(),
-  };
-};
 
 // Health check for multilingual services
 export const checkMultilingualHealth = async (): Promise<{

@@ -8,11 +8,7 @@ import { ChatSidebar } from "./components/ChatSidebar";
 import { LoadingMessage } from "./components/LoadingMessage";
 import { SessionStatus } from "./components/SessionStatus";
 import { LanguageSelector } from "./components/LanguageSelector";
-import {
-  askQuestion,
-  createNewChatSession,
-  getChatSessions,
-} from "./services/api";
+import { askQuestion, getChatSessions } from "./services/api";
 import { getPersistentBrowserFingerprint } from "./services/browserFingerprint";
 import multilingualService from "./services/multilingualService";
 import type { ChatSession, User } from "./types/chat";
@@ -98,24 +94,8 @@ function App() {
   }, [loadChatSessions]);
 
   const handleNewChat = async () => {
-    try {
-      const newSession = await createNewChatSession(user.id);
-      const chatSession: ChatSession = {
-        id: newSession.id,
-        title: uiStrings.newChat,
-        messages: [],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-
-      setChatSessions([chatSession, ...chatSessions]);
-      setCurrentSession(chatSession);
-      setError(null);
-      setLastResponseMetadata(null);
-    } catch (error) {
-      console.error("Failed to create new chat:", error);
-      setError(uiStrings.errorCreating);
-    }
+    setCurrentSession(null);
+    setError(null);
   };
 
   const handleSessionSelect = (sessionId: string) => {
@@ -134,63 +114,42 @@ function App() {
     setError(null);
 
     try {
-      // If no current session, create a new one
-      let sessionToUse = currentSession;
-      if (!sessionToUse) {
-        await handleNewChat();
-        sessionToUse = currentSession;
+      // CHANGE: Don't create session upfront, let backend handle it
+      const { message, sessionId } = await askQuestion(
+        question,
+        user.id,
+        currentSession?.id
+      );
+
+      // Find existing session or create new one based on backend response
+      let updatedSession: ChatSession;
+      const existingSession = chatSessions.find((s) => s.id === sessionId);
+
+      if (existingSession) {
+        updatedSession = {
+          ...existingSession,
+          messages: [...existingSession.messages, message],
+          updatedAt: new Date(),
+        };
+      } else {
+        updatedSession = {
+          id: sessionId, // Use backend's session ID
+          title: question.slice(0, 50) + (question.length > 50 ? "..." : ""),
+          messages: [message],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
       }
 
-      // Ask question with multilingual support (auto-detection)
-      const result = await askQuestion(question, user.id, sessionToUse?.id);
-
-      // Store response metadata for debugging
-      if (result.metadata) {
-        setLastResponseMetadata(result.metadata);
-        console.log("Response metadata:", result.metadata);
-      }
-
-      // Update the current session with the new message
-      const isNewChat =
-        sessionToUse?.title === uiStrings.newChat || !sessionToUse;
-      const updatedSession: ChatSession = {
-        id: result.sessionId,
-        title: isNewChat
-          ? question.slice(0, 50) + (question.length > 50 ? "..." : "")
-          : sessionToUse!.title,
-        messages: [...(sessionToUse?.messages || []), result.message],
-        createdAt: sessionToUse?.createdAt || new Date(),
-        updatedAt: new Date(),
-      };
-
-      // Update sessions list
-      const updatedSessions = sessionToUse
-        ? chatSessions.map((s) =>
-            s.id === sessionToUse.id ? updatedSession : s
-          )
+      const updatedSessions = existingSession
+        ? chatSessions.map((s) => (s.id === sessionId ? updatedSession : s))
         : [updatedSession, ...chatSessions];
 
       setChatSessions(updatedSessions);
       setCurrentSession(updatedSession);
-
-      // If we detected a different language than UI, show info but don't force switch
-      if (
-        result.language &&
-        result.language !== currentLanguage &&
-        result.language !== "en"
-      ) {
-        const langInfo = multilingualService
-          .getSupportedLanguages()
-          .find((l) => l.code === result.language);
-        if (langInfo && langInfo.available) {
-          console.log(
-            `Question detected in ${langInfo.nativeName}. Response generated in that language.`
-          );
-        }
-      }
     } catch (error) {
       console.error("Failed to send message:", error);
-      setError(uiStrings.errorSending);
+      setError("Failed to send message. Please try again.");
     } finally {
       setIsLoading(false);
     }
