@@ -151,11 +151,60 @@ def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
                 conversation_history, is_followup, session_id, user_question
             )
         
-        # Step 3: Get language info and determine response strategy
+      # Step 3: Get language info and determine response strategy
         language_info = state.get("language_info", {"language": "en"})
         target_language = language_info.get("language", "en")
         requires_multilingual = target_language != "en"
-        
+
+        # EXPLICIT DEBUG: Log each value separately
+        synthesis_logger.info(f"DEBUG: language_info = {language_info}")
+        synthesis_logger.info(f"DEBUG: target_language = '{target_language}'")
+        synthesis_logger.info(f"DEBUG: requires_multilingual = {requires_multilingual}")
+        synthesis_logger.info(f"DEBUG: state_keys = {list(state.keys())}")
+
+        # Check if language_info is actually in the state
+        if "language_info" in state:
+            synthesis_logger.info(f"DEBUG: language_info found in state: {state['language_info']}")
+        else:
+            synthesis_logger.info("DEBUG: language_info NOT found in state!")
+            synthesis_logger.info(f"DEBUG: Available state keys: {list(state.keys())}")
+            
+            # NEW: Check workflow_parameters for language_info
+            workflow_params = state.get("workflow_parameters", {})
+            synthesis_logger.info(f"DEBUG: workflow_parameters = {workflow_params}")
+            
+            if isinstance(workflow_params, dict) and "language_info" in workflow_params:
+                backup_language_info = workflow_params["language_info"]
+                synthesis_logger.info(f"DEBUG: Found language_info in workflow_parameters: {backup_language_info}")
+                # Use the backup language info
+                language_info = backup_language_info
+                target_language = language_info.get("language", "en")
+                requires_multilingual = target_language != "en"
+                synthesis_logger.info(f"DEBUG: Updated target_language to '{target_language}' from workflow_parameters")
+            else:
+                synthesis_logger.info("DEBUG: language_info also NOT found in workflow_parameters!")
+            
+            # NEW: Check structured_analysis for language info
+            structured_analysis = state.get("structured_analysis", {})
+            synthesis_logger.info(f"DEBUG: structured_analysis = {structured_analysis}")
+            
+            if isinstance(structured_analysis, dict) and "user_language" in structured_analysis:
+                user_lang = structured_analysis["user_language"]
+                synthesis_logger.info(f"DEBUG: Found user_language in structured_analysis: {user_lang}")
+                if user_lang != "en":
+                    # Create language_info from structured_analysis
+                    language_info = {
+                        "language": user_lang,
+                        "confidence": structured_analysis.get("language_confidence", 0.8),
+                        "requires_translation": structured_analysis.get("requires_translation", True),
+                        "detection_method": "from_structured_analysis"
+                    }
+                    target_language = user_lang
+                    requires_multilingual = True
+                    synthesis_logger.info(f"DEBUG: Updated target_language to '{target_language}' from structured_analysis")
+            else:
+                synthesis_logger.info("DEBUG: No user_language found in structured_analysis either!")
+
         synthesis_logger.info(
             "language_context_determined",
             session_id=session_id,
@@ -163,7 +212,7 @@ def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
             requires_multilingual=requires_multilingual,
             multilingual_available=MULTILINGUAL_AVAILABLE
         )
-        
+                
         # Step 4: FIXED MULTILINGUAL GENERATION
         synthesis_content = ""
         translation_info = None

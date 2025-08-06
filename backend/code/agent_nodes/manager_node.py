@@ -104,25 +104,29 @@ def validate_and_sanitize_input(state: ImmigrationState) -> Dict[str, Any]:
     }
 
 def detect_user_language(user_question: str, session_id: str) -> Dict[str, Any]:
-    """Detect user language synchronously"""
+    """Detect user language synchronously using patterns"""
     
-    if not MULTILINGUAL_AVAILABLE:
-        return {
-            "language": "en",
-            "confidence": 1.0,
-            "detection_method": "multilingual_disabled",
-            "requires_translation": False
-        }
+    manager_logger.info(
+        "language_detection_started",
+        session_id=session_id,
+        multilingual_available=MULTILINGUAL_AVAILABLE
+    )
     
     try:
         question_lower = user_question.lower()
         
-        # Spanish detection patterns
-        spanish_patterns = ['¿', '¡', 'ñ', 'inmigración', 'visa', 'cómo', 'qué', 'cuándo', 'dónde']
+        # Spanish detection patterns (enhanced)
+        spanish_patterns = ['¿', '¡', 'ñ', 'inmigración', 'visa', 'cómo', 'qué', 'cuándo', 'dónde', 'cuesta', 'cuánto']
         spanish_score = sum(1 for pattern in spanish_patterns if pattern in question_lower)
         
         if spanish_score > 0:
             confidence = min(0.6 + (spanish_score * 0.1), 0.95)
+            manager_logger.info(
+                "spanish_language_detected",
+                session_id=session_id,
+                patterns_found=spanish_score,
+                confidence=confidence
+            )
             return {
                 "language": "es", 
                 "confidence": confidence,
@@ -132,6 +136,10 @@ def detect_user_language(user_question: str, session_id: str) -> Dict[str, Any]:
         
         # French patterns
         if any(pattern in question_lower for pattern in ['ç', 'où', 'français']):
+            manager_logger.info(
+                "french_language_detected",
+                session_id=session_id
+            )
             return {
                 "language": "fr",
                 "confidence": 0.7,
@@ -141,6 +149,10 @@ def detect_user_language(user_question: str, session_id: str) -> Dict[str, Any]:
         
         # Portuguese patterns
         if any(pattern in question_lower for pattern in ['ção', 'português', 'imigração']):
+            manager_logger.info(
+                "portuguese_language_detected",
+                session_id=session_id
+            )
             return {
                 "language": "pt",
                 "confidence": 0.7,
@@ -149,6 +161,10 @@ def detect_user_language(user_question: str, session_id: str) -> Dict[str, Any]:
             }
         
         # Default to English
+        manager_logger.info(
+            "english_language_detected_default",
+            session_id=session_id
+        )
         return {
             "language": "en",
             "confidence": 0.9,
@@ -157,7 +173,11 @@ def detect_user_language(user_question: str, session_id: str) -> Dict[str, Any]:
         }
         
     except Exception as e:
-        manager_logger.error(f"Language detection failed: {e}")
+        manager_logger.error(
+            "language_detection_failed",
+            session_id=session_id,
+            error=str(e)
+        )
         return {
             "language": "en",
             "confidence": 0.0,
@@ -389,15 +409,19 @@ def manager_node(state: ImmigrationState) -> Dict[str, Any]:
         }
         
         # Step 8: Compile final results with language information (UPDATED)
+        # Temporary test - put language_info in workflow_parameters
+        workflow_parameters_with_lang = structured_analysis.copy()
+        workflow_parameters_with_lang["language_info"] = language_info
+
         final_result = {
             "manager_decision": strategic_decision,
             "structured_analysis": structured_analysis,
             "tool_results": tool_results,
             "tools_used": structured_analysis["tools_used"],
             "rag_response": rag_response_content,
-            "workflow_parameters": structured_analysis,
+            "workflow_parameters": workflow_parameters_with_lang,  # ← Include language_info here
             "validation_warnings": validation_result.get("validation_warnings", []),
-            "language_info": language_info  # NEW: Pass language info to synthesis
+            "language_info": language_info  # Keep this too
         }
         
         manager_logger.info(
@@ -411,6 +435,10 @@ def manager_node(state: ImmigrationState) -> Dict[str, Any]:
             session_id=session_id
         )
         
+        # DEBUG: Log what manager is actually returning
+        manager_logger.info(f"DEBUG: manager final_result keys = {list(final_result.keys())}")
+        manager_logger.info(f"DEBUG: manager language_info being returned = {final_result.get('language_info')}")
+
         return final_result
         
     except Exception as e:

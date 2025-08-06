@@ -637,4 +637,3 @@ async def get_supported_languages():
             "service_status": "error",
             "error": str(e)
         }
-
