@@ -50,6 +50,8 @@ export const askQuestion = async (
   chatSessionId?: string  // Only pass this if continuing existing session
 ): Promise<{ message: Message; sessionId: string }> => {
   const clientFingerprint = getPersistentBrowserFingerprint();
+
+  console.warn(userId)
   
   const requestBody: { 
     question: string; 
