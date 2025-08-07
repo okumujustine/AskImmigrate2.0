@@ -1,12 +1,15 @@
 import logging
+import time
 from datetime import datetime
 from typing import List, Optional
-import time
 
-from fastapi import FastAPI, Query, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from backend.code.agent_nodes.rag_retrieval_agent.db_ingestion import (
+    execute_db_ingestion,
+)
 from backend.code.session_manager import session_manager
 
 # Configure logging
@@ -101,7 +104,10 @@ def get_session_qa(client_fingerprint: Optional[str] = Query(None)):
     logger.info(f"GET /session-qa - Client fingerprint: {'provided' if client_fingerprint else 'not provided'}")
     
     try:
-        from backend.code.utils import extract_client_from_session_id, create_client_fingerprint_hash
+        from backend.code.utils import (
+            create_client_fingerprint_hash,
+            extract_client_from_session_id,
+        )
         
         sessions = session_manager.list_all_sessions()
         logger.info(f"Retrieved {len(sessions)} total sessions from session manager")
@@ -206,7 +212,10 @@ def get_session_ids(client_fingerprint: Optional[str] = Query(None)):
     logger.info(f"GET /session-ids - Client fingerprint: {'provided' if client_fingerprint else 'not provided'}")
     
     try:
-        from backend.code.utils import extract_client_from_session_id, create_client_fingerprint_hash
+        from backend.code.utils import (
+            create_client_fingerprint_hash,
+            extract_client_from_session_id,
+        )
         
         sessions = session_manager.list_all_sessions()
         session_ids = [session["session_id"] for session in sessions]
@@ -297,5 +306,29 @@ def health_check():
         return {
             "status": "unhealthy",
             "timestamp": datetime.now().isoformat(),
+            "error": str(e)
+        }
+
+
+# run this command python -m backend.code.embed_documents
+@app.get("/embed-documents")
+def embed_documents_api():
+    """
+    Endpoint to trigger document embedding process.
+    """
+    logger.info("GET /embed-documents - Document embedding requested")
+    
+    try:
+
+        execute_db_ingestion()
+        
+        logger.info("Document embedding completed successfully")
+        return {"status": "success", "message": "Documents embedded successfully"}
+        
+    except Exception as e:
+        logger.error(f"Error embedding documents: {str(e)}", exc_info=True)
+        return {
+            "status": "error",
+            "message": "Failed to embed documents",
             "error": str(e)
         }

@@ -40,9 +40,6 @@ COPY backend ./backend
 
 WORKDIR /app
 
-# CMD ["uvicorn", "backend.code.api:app", "--host", "0.0.0.0", "--port", "8088"]
-# # Expose the required port for FastAPI or your app
 EXPOSE 8088
 
-# Set the entrypoint or command to run the script when the container starts
-CMD ["python -m backend.code.embed_documents && uvicorn backend.code.main:app --host 0.0.0.0 --port 8088"]
+CMD ["uvicorn", "backend.code.api:app", "--host", "0.0.0.0", "--port", "8088"]
