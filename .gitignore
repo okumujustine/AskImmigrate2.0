@@ -44,3 +44,7 @@ temp.json
 /backend/outputs/vector_db/*
 Project guidelines.docx
 project guidelines.txt
+
+# Session files
+sessions.txt
+*.db
