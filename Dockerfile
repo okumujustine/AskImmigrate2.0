@@ -38,6 +38,6 @@ ENV PATH="/venv/bin:$PATH"
 # Copy app source
 COPY backend ./backend
 
-WORKDIR /app/backend
+WORKDIR /app
 
-CMD ["uvicorn", "code.api:app", "--host", "0.0.0.0", "--port", "8088"]
+CMD ["uvicorn", "backend.code.api:app", "--host", "0.0.0.0", "--port", "8088"]
