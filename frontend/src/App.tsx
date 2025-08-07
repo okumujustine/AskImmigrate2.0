@@ -5,11 +5,7 @@ import { ChatMessage } from "./components/ChatMessage";
 import { ChatSidebar } from "./components/ChatSidebar";
 import { LoadingMessage } from "./components/LoadingMessage";
 import { SessionStatus } from "./components/SessionStatus";
-import {
-  askQuestion,
-  createNewChatSession,
-  getChatSessions,
-} from "./services/api";
+import { askQuestion, getChatSessions } from "./services/api";
 import { getPersistentBrowserFingerprint } from "./services/browserFingerprint";
 import type { ChatSession, User } from "./types/chat";
 
@@ -56,23 +52,8 @@ function App() {
   }, [loadChatSessions]);
 
   const handleNewChat = async () => {
-    try {
-      const newSession = await createNewChatSession(user.id);
-      const chatSession: ChatSession = {
-        id: newSession.id,
-        title: "New Chat",
-        messages: [],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-
-      setChatSessions([chatSession, ...chatSessions]);
-      setCurrentSession(chatSession);
-      setError(null);
-    } catch (error) {
-      console.error("Failed to create new chat:", error);
-      setError("Failed to create new chat");
-    }
+    setCurrentSession(null);
+    setError(null);
   };
 
   const handleSessionSelect = (sessionId: string) => {
@@ -90,36 +71,35 @@ function App() {
     setError(null);
 
     try {
-      // If no current session, create a new one
-      let sessionToUse = currentSession;
-      if (!sessionToUse) {
-        await handleNewChat();
-        sessionToUse = currentSession;
-      }
-
+      // CHANGE: Don't create session upfront, let backend handle it
       const { message, sessionId } = await askQuestion(
         question,
         user.id,
-        sessionToUse?.id
+        currentSession?.id
       );
 
-      // Update the current session with the new message
-      const isNewChat = sessionToUse?.title === "New Chat" || !sessionToUse;
-      const updatedSession: ChatSession = {
-        id: sessionId,
-        title: isNewChat
-          ? question.slice(0, 50) + (question.length > 50 ? "..." : "")
-          : sessionToUse!.title,
-        messages: [...(sessionToUse?.messages || []), message],
-        createdAt: sessionToUse?.createdAt || new Date(),
-        updatedAt: new Date(),
-      };
+      // Find existing session or create new one based on backend response
+      let updatedSession: ChatSession;
+      const existingSession = chatSessions.find((s) => s.id === sessionId);
 
-      // Update sessions list
-      const updatedSessions = sessionToUse
-        ? chatSessions.map((s) =>
-            s.id === sessionToUse.id ? updatedSession : s
-          )
+      if (existingSession) {
+        updatedSession = {
+          ...existingSession,
+          messages: [...existingSession.messages, message],
+          updatedAt: new Date(),
+        };
+      } else {
+        updatedSession = {
+          id: sessionId, // Use backend's session ID
+          title: question.slice(0, 50) + (question.length > 50 ? "..." : ""),
+          messages: [message],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+      }
+
+      const updatedSessions = existingSession
+        ? chatSessions.map((s) => (s.id === sessionId ? updatedSession : s))
         : [updatedSession, ...chatSessions];
 
       setChatSessions(updatedSessions);
