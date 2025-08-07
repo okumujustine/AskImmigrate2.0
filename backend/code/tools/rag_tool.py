@@ -71,7 +71,7 @@ def rag_retrieval_tool(query: str) -> Dict[str, Any]:
         context = "\n\n".join(documents) if documents else ""
         
         # Use the standard RAG prompt
-        system_message = rag_prompt_utils.build_rag_prompt(context, query)
+        system_message = rag_prompt_utils.build_query_prompt("", context, query, "")
         
         # Get LLM response
         rag_response = llm.invoke(system_message)
