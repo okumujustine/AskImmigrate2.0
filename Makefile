@@ -8,9 +8,11 @@ ASKIMMIGRATE_IMG := $(IMAGE_REG)/askimmigrate:$(IMAGE_TAG)
 
 build:
 	@echo "→ Building AskImmigrate image"
+	cp requirements.txt backend/
 	docker buildx build --no-cache \
 		-t $(ASKIMMIGRATE_IMG) \
 		./backend
+	rm backend/requirements.txt
 
 push:
 	@echo "→ Pushing AskImmigrate image to DockerHub"

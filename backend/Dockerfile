@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV PIP_NO_CACHE_DIR=1
 
 # Create virtual environment and install Python dependencies
-COPY ../requirements.txt .
+COPY requirements.txt .
 RUN python -m venv /venv && \
     /venv/bin/pip install --upgrade pip && \
     /venv/bin/pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
