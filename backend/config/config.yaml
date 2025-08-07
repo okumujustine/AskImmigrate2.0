@@ -1,5 +1,6 @@
 #llm: gpt-4o-mini
-llm: llama3-8b-8192
+#llm: llama3-8b-8192
+llm: gemini-2.5-flash
 
 vectordb:
   provider: "chromadb"

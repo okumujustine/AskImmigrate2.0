@@ -1,4 +1,9 @@
 langchain>=0.3.26
+google-ai-generativelanguage==0.6.15
+google-generativeai==0.8.5
+ipykernel>=6.29.5
+ipywidgets>=8.1.6
+langchain-google-genai==2.1.9
 langchain_groq~=0.3.2
 langchain_huggingface~=0.2.0
 langchain_community~=0.3.24

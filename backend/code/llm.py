@@ -7,7 +7,9 @@ load_dotenv()
 
 
 def get_llm(model_name: str, temperature: float = 0.2) -> BaseChatModel:
-    if model_name == "gpt-4o-mini":
+    if model_name == "gemini-2.5-flash":
+        return ChatGoogleGenerativeAI(model="gemini-2.5-flash", max_retries=3, temperature=temperature)
+    elif model_name == "gpt-4o-mini":
         return ChatOpenAI(model="gpt-4o-mini", temperature=temperature)
     elif model_name == "gpt-4o":
         return ChatOpenAI(model="gpt-4o", temperature=temperature)
