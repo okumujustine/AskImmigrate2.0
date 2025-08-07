@@ -4,9 +4,11 @@ from backend.code.utils import (
     get_collection, 
     get_relevant_documents, 
     initialize_chroma_db, 
-    slugify_chat_session
+    slugify_chat_session,
+    load_config
 )
-from backend.code.agent_nodes.rag_retrieval_agent.chat_logic import chat
+from backend.code.llm import get_llm
+from backend.code.tools import rag_prompt_utils
 
 # Global cache for ChromaDB instance and collection
 _chroma_cache = {
@@ -45,13 +47,7 @@ def rag_retrieval_tool(query: str) -> Dict[str, Any]:
         Dictionary containing the AI response, visa information, and references
     """
     try:
-        # Create a session ID for this interaction
-        session_id = slugify_chat_session(query)
-        
-        # Use the existing chat logic to get a response
-        rag_response = chat(session_id=session_id, question=query)
-        
-        # Try to use cached ChromaDB instance first
+        # Use cached ChromaDB instance for optimal performance
         db_instance, collection = get_cached_chroma_collection()
         
         if db_instance is None or collection is None:
@@ -67,11 +63,24 @@ def rag_retrieval_tool(query: str) -> Dict[str, Any]:
             threshold=0.6  # Use optimized threshold from config
         )
         
-        # Create references from documents (documents are strings in the current utils)
+        # Generate AI response using direct LLM call with retrieved context
+        config = load_config()
+        llm = get_llm(config.get("llm", "gemini-2.5-flash"))
+        
+        # Build context from retrieved documents
+        context = "\n\n".join(documents) if documents else ""
+        
+        # Use the standard RAG prompt
+        system_message = rag_prompt_utils.build_rag_prompt(context, query)
+        
+        # Get LLM response
+        rag_response = llm.invoke(system_message)
+        
+        # Create references from documents
         references = [f"Immigration Document {i+1}" for i in range(len(documents))]
         
         return {
-            "response": rag_response,
+            "response": rag_response.content if hasattr(rag_response, 'content') else str(rag_response),
             "references": references[:3],  # Match n_results
             "documents": documents
         }
