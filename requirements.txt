@@ -4,6 +4,7 @@ transformers==4.41.1
 safetensors==0.4.3
 numpy<2.0
 langchain>=0.3.26
+langchain-ollama>=0.0.6
 google-generativeai==0.8.5
 google-ai-generativelanguage==0.6.15
 langchain-google-genai==2.0.2

@@ -1,6 +1,3 @@
-# from langchain_groq import ChatGroq
-from langchain_openai import ChatOpenAI
-
 from backend.code.agent_nodes.rag_retrieval_agent.config_loader import (
     load_app_config,
     load_prompt_config,
@@ -9,22 +6,12 @@ from backend.code.agent_nodes.rag_retrieval_agent.chat_logger import setup_loggi
 from backend.code.agent_nodes.rag_retrieval_agent.memory import make_memory
 from backend.code.tools.rag_prompt_utils import build_query_prompt
 from backend.code.utils import get_collection, get_relevant_documents, initialize_chroma_db
+from backend.code.llm import get_llm
 
 
 def respond_to_query(llm: str, prompt: str) -> str:
-    if llm.startswith("gpt-") or llm in ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "gpt-4-mini"]:
-        from langchain_openai import ChatOpenAI
-        model = ChatOpenAI(model=llm, temperature=0.2)
-    elif llm.startswith("llama3-"):
-        from langchain_groq import ChatGroq
-        model = llm
-        model = ChatGroq(model=llm, temperature=0.2)
-    else:
-        raise ValueError(f"Unknown model name: {llm}")
+    model = get_llm(llm, temperature=0.2)
     return model.invoke(prompt).content
-
-    
-
 
 def chat(session_id: str, question: str) -> str:
     setup_logging()
