@@ -1,31 +1,33 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import './App.css';
-import { ChatInput } from './components/ChatInput';
-import { ChatMessage } from './components/ChatMessage';
-import { ChatSidebar } from './components/ChatSidebar';
-import { LoadingMessage } from './components/LoadingMessage';
-import { SessionStatus } from './components/SessionStatus';
-import { askQuestion, createNewChatSession, getChatSessions } from './services/api';
-import { getPersistentBrowserFingerprint } from './services/browserFingerprint';
-import type { ChatSession, User } from './types/chat';
+import { useCallback, useEffect, useRef, useState } from "react";
+import "./App.css";
+import { ChatInput } from "./components/ChatInput";
+import { ChatMessage } from "./components/ChatMessage";
+import { ChatSidebar } from "./components/ChatSidebar";
+import { LoadingMessage } from "./components/LoadingMessage";
+import { SessionStatus } from "./components/SessionStatus";
+import { askQuestion, getChatSessions } from "./services/api";
+import { getPersistentBrowserFingerprint } from "./services/browserFingerprint";
+import type { ChatSession, User } from "./types/chat";
 
 // Import debug functions to make them available
-import './services/browserFingerprint';
+import "./services/browserFingerprint";
 
 function App() {
   // Initialize user with browser fingerprint for anonymous isolation
   const [user] = useState<User>(() => {
     const clientId = getPersistentBrowserFingerprint();
-    return { id: clientId, name: 'User' };
+    return { id: clientId, name: "User" };
   });
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
-  const [currentSession, setCurrentSession] = useState<ChatSession | null>(null);
+  const [currentSession, setCurrentSession] = useState<ChatSession | null>(
+    null
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   useEffect(() => {
@@ -40,8 +42,8 @@ function App() {
         setCurrentSession(sessions[0]);
       }
     } catch (error) {
-      console.error('Failed to load chat sessions:', error);
-      setError('Failed to load chat sessions');
+      console.error("Failed to load chat sessions:", error);
+      setError("Failed to load chat sessions");
     }
   }, [user.id]);
 
@@ -50,27 +52,12 @@ function App() {
   }, [loadChatSessions]);
 
   const handleNewChat = async () => {
-    try {
-      const newSession = await createNewChatSession(user.id);
-      const chatSession: ChatSession = {
-        id: newSession.id,
-        title: 'New Chat',
-        messages: [],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      
-      setChatSessions([chatSession, ...chatSessions]);
-      setCurrentSession(chatSession);
-      setError(null);
-    } catch (error) {
-      console.error('Failed to create new chat:', error);
-      setError('Failed to create new chat');
-    }
+    setCurrentSession(null);
+    setError(null);
   };
 
   const handleSessionSelect = (sessionId: string) => {
-    const session = chatSessions.find(s => s.id === sessionId);
+    const session = chatSessions.find((s) => s.id === sessionId);
     if (session) {
       setCurrentSession(session);
       setError(null);
@@ -84,39 +71,42 @@ function App() {
     setError(null);
 
     try {
-      // If no current session, create a new one
-      let sessionToUse = currentSession;
-      if (!sessionToUse) {
-        await handleNewChat();
-        sessionToUse = currentSession;
-      }
-
+      // CHANGE: Don't create session upfront, let backend handle it
       const { message, sessionId } = await askQuestion(
         question,
         user.id,
-        sessionToUse?.id
+        currentSession?.id
       );
 
-      // Update the current session with the new message
-      const isNewChat = sessionToUse?.title === 'New Chat' || !sessionToUse;
-      const updatedSession: ChatSession = {
-        id: sessionId,
-        title: isNewChat ? question.slice(0, 50) + (question.length > 50 ? '...' : '') : sessionToUse!.title,
-        messages: [...(sessionToUse?.messages || []), message],
-        createdAt: sessionToUse?.createdAt || new Date(),
-        updatedAt: new Date(),
-      };
+      // Find existing session or create new one based on backend response
+      let updatedSession: ChatSession;
+      const existingSession = chatSessions.find((s) => s.id === sessionId);
 
-      // Update sessions list
-      const updatedSessions = sessionToUse
-        ? chatSessions.map(s => s.id === sessionToUse.id ? updatedSession : s)
+      if (existingSession) {
+        updatedSession = {
+          ...existingSession,
+          messages: [...existingSession.messages, message],
+          updatedAt: new Date(),
+        };
+      } else {
+        updatedSession = {
+          id: sessionId, // Use backend's session ID
+          title: question.slice(0, 50) + (question.length > 50 ? "..." : ""),
+          messages: [message],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+      }
+
+      const updatedSessions = existingSession
+        ? chatSessions.map((s) => (s.id === sessionId ? updatedSession : s))
         : [updatedSession, ...chatSessions];
 
       setChatSessions(updatedSessions);
       setCurrentSession(updatedSession);
     } catch (error) {
-      console.error('Failed to send message:', error);
-      setError('Failed to send message. Please try again.');
+      console.error("Failed to send message:", error);
+      setError("Failed to send message. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -130,13 +120,17 @@ function App() {
         onSessionSelect={handleSessionSelect}
         onNewChat={handleNewChat}
       />
-      
+
       <main className="chat-main">
-        <SessionStatus 
-          hasSessionId={currentSession ? !currentSession.id.startsWith('new-session-') : false}
+        <SessionStatus
+          hasSessionId={
+            currentSession
+              ? !currentSession.id.startsWith("new-session-")
+              : false
+          }
           sessionId={currentSession?.id}
         />
-        
+
         <div className="chat-container">
           {currentSession && currentSession.messages.length > 0 ? (
             <div className="messages-container">
@@ -149,7 +143,9 @@ function App() {
           ) : (
             <div className="empty-state">
               <h1>Welcome to AskImmigrate</h1>
-              <p>Ask any question about immigration and get detailed answers.</p>
+              <p>
+                Ask any question about immigration and get detailed answers.
+              </p>
               <div className="example-questions">
                 <h3>Example questions:</h3>
                 <ul>
@@ -160,18 +156,18 @@ function App() {
               </div>
             </div>
           )}
-          
-          {error && (
-            <div className="error-message">
-              {error}
-            </div>
-          )}
+
+          {error && <div className="error-message">{error}</div>}
         </div>
-        
+
         <ChatInput
           onSendMessage={handleSendMessage}
           disabled={isLoading}
-          hasSessionId={currentSession ? !currentSession.id.startsWith('new-session-') : false}
+          hasSessionId={
+            currentSession
+              ? !currentSession.id.startsWith("new-session-")
+              : false
+          }
         />
       </main>
     </div>

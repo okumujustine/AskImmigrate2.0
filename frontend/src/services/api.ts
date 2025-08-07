@@ -1,5 +1,4 @@
 import type { Message } from '../types/chat';
-import { mockAskQuestion } from './mockApi';
 import { getPersistentBrowserFingerprint } from './browserFingerprint';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8088';
@@ -48,60 +47,42 @@ const cleanAnswer = (answer: string, question: string): string => {
 export const askQuestion = async (
   question: string,
   userId: string,
-  chatSessionId?: string
+  chatSessionId?: string  // Only pass this if continuing existing session
 ): Promise<{ message: Message; sessionId: string }> => {
-  if (USE_MOCK_API) {
-    return mockAskQuestion(question, userId, chatSessionId);
+  const clientFingerprint = getPersistentBrowserFingerprint();
+  
+  const requestBody: { 
+    question: string; 
+    client_fingerprint: string;
+    session_id?: string;  // Only include if we have an existing session
+  } = {
+    question,
+    client_fingerprint: clientFingerprint,
+  };
+
+  // Only add session_id if we're continuing an existing conversation
+  if (chatSessionId && !chatSessionId.startsWith('new-')) {
+    requestBody.session_id = chatSessionId;
   }
+  // If chatSessionId is undefined or starts with 'new-', let backend create new session
 
-  try {
-    // Get client fingerprint for session isolation
-    const clientFingerprint = getPersistentBrowserFingerprint();
-    
-    const requestBody: { 
-      question: string; 
-      session_id?: string;
-      client_fingerprint: string;
-    } = {
-      question,
-      client_fingerprint: clientFingerprint,
-    };
+  const response = await fetch(`${API_BASE_URL}/query`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody),
+  });
 
-    // Include session_id if we have one
-    if (chatSessionId) {
-      requestBody.session_id = chatSessionId;
-    }
-
-    const response = await fetch(`${API_BASE_URL}/query`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to get response from API');
-    }
-
-    const data: { answer: string; session_id: string } = await response.json();
-    
-    // Create message from the API response
-    const message: Message = {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+  const data = await response.json();
+  
+  return {
+    message: {
+      id: Date.now().toString(),
       question: question,
       answer: cleanAnswer(data.answer, question),
       timestamp: new Date(),
-    };
-
-    return {
-      message,
-      sessionId: data.session_id,
-    };
-  } catch (error) {
-    console.error('Error asking question:', error);
-    throw error;
-  }
+    },
+    sessionId: data.session_id  // Use whatever session ID backend returns
+  };
 };
 
 // Function to get session messages from your API
@@ -137,15 +118,12 @@ export const getSessionMessages = async (
 
 export const getChatSessions = async (userId: string) => {
   if (USE_MOCK_API) {
-    // Return empty array for mock - sessions will be created as user interacts
     return [];
   }
 
   try {
-    // Get client fingerprint for session filtering
     const clientFingerprint = getPersistentBrowserFingerprint();
     
-    // Include client fingerprint as query parameter for session filtering
     const url = new URL(`${API_BASE_URL}/session-ids`);
     url.searchParams.append('client_fingerprint', clientFingerprint);
     
@@ -179,27 +157,4 @@ export const getChatSessions = async (userId: string) => {
     console.error('Error fetching chat sessions:', error);
     return [];
   }
-};
-
-export const createNewChatSession = async (userId: string) => {
-  if (USE_MOCK_API) {
-    return {
-      id: `session-${Date.now()}`,
-      userId,
-      title: 'New Chat',
-      createdAt: new Date().toISOString(),
-    };
-  }
-
-  // For our API, new sessions are created automatically when sending the first message
-  // Generate a temporary session ID that includes client fingerprint for consistency
-  const clientFingerprint = getPersistentBrowserFingerprint();
-  const tempSessionId = `new-${clientFingerprint.split('-')[0]}-${Date.now()}`;
-  
-  return {
-    id: tempSessionId,
-    userId,
-    title: 'New Chat',
-    createdAt: new Date().toISOString(),
-  };
 };
