@@ -1,3 +1,5 @@
+import os
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -9,7 +11,12 @@ load_dotenv()
 
 def get_llm(model_name: str, temperature: float = 0.2) -> BaseChatModel:
     if model_name == "gemini-2.5-flash":
-        return ChatGoogleGenerativeAI(model="gemini-2.5-flash", max_retries=3, temperature=temperature)
+        return ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash", 
+            max_retries=3, 
+            temperature=temperature,
+            google_api_key=os.getenv("GEMINI_API_KEY")
+        )
     elif model_name == "gpt-4o-mini":
         return ChatOpenAI(model="gpt-4o-mini", temperature=temperature)
     elif model_name == "gpt-4o":

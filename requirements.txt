@@ -1,8 +1,14 @@
+torch==2.1.2
+sentence-transformers>=2.5.1
+transformers==4.41.1
+safetensors==0.4.3
+numpy<2.0
 langchain>=0.3.26
-google-generativeai
-ipykernel>=6.29.5
-ipywidgets>=8.1.6
-langchain-google-genai
+langchain-ollama>=0.0.6
+google-generativeai==0.8.5
+google-ai-generativelanguage==0.6.15
+langchain-google-genai==2.0.2
+langchain-openai==0.3.28
 langchain_groq~=0.3.2
 langchain_huggingface~=0.2.0
 langchain_community~=0.3.24
@@ -17,13 +23,12 @@ python-slugify
 fastapi~=0.110.2
 uvicorn[standard]~=0.29.0
 requests>=2.31.0
-numpy>=2.1.0
+numpy>=1.24,<2.0  # double pinning for safety
 typing-extensions>=4.12.0,<5
 PyPDF2~=3.0.1
 pytest~=8.2.2
 pytest-cov~=6.0.0
 coverage~=7.6.0
-langchain-openai~=0.3.25
 langgraph~=0.4.8
 pyjokes~=0.8.3
 black~=25.1.0

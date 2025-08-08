@@ -28,6 +28,7 @@ load_dotenv()
 
 # Import structured logging
 from backend.code.structured_logging import cli_logger, start_request_tracking
+from backend.code.agent_nodes.rag_retrieval_agent.config_loader import load_app_config
 
 # To avoid tokenizer parallelism warning from huggingface
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -68,6 +69,45 @@ def sanitize_session_id(session_id: str) -> str:
     })
     
     return cleaned
+
+
+def get_required_api_key_for_model(model_name: str) -> tuple[str, str]:
+    """
+    Get the required API key environment variable and description for a given model.
+    
+    Returns:
+        tuple: (env_var_name, description)
+    """
+    if model_name.startswith("gemini-"):
+        return ("GEMINI_API_KEY", "Google Gemini models")
+    elif model_name.startswith("gpt-") or model_name in ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "gpt-4-mini"]:
+        return ("OPENAI_API_KEY", "OpenAI models")
+    elif model_name.startswith("llama3-"):
+        return ("GROQ_API_KEY", "Groq models")
+    else:
+        return ("", "Unknown model")
+
+
+def validate_api_key(model_name: str) -> bool:
+    """
+    Validate that the required API key is present for the given model.
+    
+    Returns:
+        bool: True if API key is present, False otherwise
+    """
+    env_var, description = get_required_api_key_for_model(model_name)
+    if not env_var:
+        return False
+    
+    api_key = os.getenv(env_var)
+    if not api_key:
+        print(f"❌ Error: No API key found for {description}.")
+        print(f"\nYou need: {env_var} for {description}")
+        print(f"\nSet it in your .env file or export it:")
+        print(f"   export {env_var}=your_api_key")
+        return False
+    
+    return True
 
 
 def main():
@@ -202,22 +242,26 @@ def main():
         })
         return
 
-    # Check for API key (either GROQ or OpenAI)
-    groq_key = os.getenv("GROQ_API_KEY")
-    openai_key = os.getenv("OPENAI_API_KEY")
-    
-    if not groq_key and not openai_key:
-        print("❌ Error: No API key found.")
-        print("\nYou need either:")
-        print("1. GROQ_API_KEY for Groq models")
-        print("2. OPENAI_API_KEY for OpenAI models")
-        print("\nSet one in your .env file or export it:")
-        print("   export GROQ_API_KEY=your_groq_key")
-        print("   export OPENAI_API_KEY=your_openai_key")
+    # Load config to get the model name and validate the appropriate API key
+    try:
+        app_config = load_app_config()
+        model_name = app_config.get("llm", "gpt-4o-mini")  # Default fallback
         
+        if not validate_api_key(model_name):
+            correlation_id = start_request_tracking()
+            cli_logger.error("Application exiting due to missing API key", extra={
+                "event": "app_exit_no_api_key",
+                "model_name": model_name,
+                "correlation_id": correlation_id
+            })
+            sys.exit(1)
+            
+    except Exception as e:
+        print(f"❌ Error loading configuration: {e}")
         correlation_id = start_request_tracking()
-        cli_logger.error("Application exiting due to missing API key", extra={
-            "event": "app_exit_no_api_key",
+        cli_logger.error("Application exiting due to config error", extra={
+            "event": "app_exit_config_error",
+            "error": str(e),
             "correlation_id": correlation_id
         })
         sys.exit(1)
@@ -225,10 +269,10 @@ def main():
     # Main processing
     try:
         if args.agent:
-            # IMPROVED: Use session-aware multi-agent workflow with fixed session handling
+            # OPTIMIZED: Use fast workflow with automatic path selection
             correlation_id = start_request_tracking()
-            cli_logger.info("Starting session-aware agent workflow", extra={
-                "event": "agent_workflow_started",
+            cli_logger.info("Starting optimized agent workflow", extra={
+                "event": "optimized_workflow_started",
                 "question": args.question,
                 "session_id": session_id,
                 "correlation_id": correlation_id
@@ -241,8 +285,8 @@ def main():
                     "correlation_id": correlation_id
                 })
             
-            from backend.code.graph_workflow import run_agentic_askimmigrate
-            results = run_agentic_askimmigrate(text=args.question, session_id=session_id)
+            from backend.code.fast_workflow import run_optimized_workflow
+            results = run_optimized_workflow(text=args.question, session_id=session_id)
             
             # Display the synthesis response
             if "synthesis" in results:

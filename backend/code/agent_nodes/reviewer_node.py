@@ -2,9 +2,9 @@ from typing import Dict, Any, Literal
 
 from backend.code.prompt_builder import build_prompt_from_config
 from backend.code.paths import APP_CONFIG_FPATH, PROMPT_CONFIG_FPATH
-from backend.code.utils import load_config
-config = load_config(APP_CONFIG_FPATH)
-prompt_config = load_config(PROMPT_CONFIG_FPATH)
+from backend.code.utils import load_yaml_config
+config = load_yaml_config(APP_CONFIG_FPATH)
+prompt_config = load_yaml_config(PROMPT_CONFIG_FPATH)
 from backend.code.agentic_state import ImmigrationState, ReviewOutput
 from backend.code.llm import get_llm
 from backend.code.structured_logging import reviewer_logger, PerformanceTimer
@@ -16,7 +16,7 @@ def reviewer_node(state: ImmigrationState) -> Dict[str, Any]:
     """
     # Track revision rounds
     revision_round = state.get("revision_round", 0) + 1
-    max_revisions = 2  # Limit to prevent infinite loops - quality control needs multiple rounds
+    max_revisions = 1  # Limit to prevent infinite loops - quality control needs multiple rounds
     session_id = state.get("session_id", "")
 
     reviewer_logger.info(
