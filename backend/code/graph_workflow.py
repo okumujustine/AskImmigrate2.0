@@ -57,15 +57,7 @@ def create_ask_immigrate_graph() -> CompiledStateGraph:
 def create_initial_state(text: str, session_id: Optional[str] = None, 
                         language_info: Optional[Dict[str, Any]] = None) -> ImmigrationState:
     """
-    Create enhanced initial state with COMPLETE session support and debugging.
-    
-    CRITICAL FIXES:
-    - Complete implementation with all session loading logic
-    - Session ID sanitization to handle whitespace issues
-    - Proper session context loading with validation
-    - Enhanced debugging throughout the process
-    - Better error handling for session operations
-    - GUARANTEED to return a valid ImmigrationState object
+    CRITICAL FIX: Create enhanced initial state with COMPLETE session support and debugging.
     """
     
     workflow_logger.info(
@@ -98,7 +90,7 @@ def create_initial_state(text: str, session_id: Optional[str] = None,
         text=text,
         user_question=text,
         session_id=actual_session_id,
-        language_info=language_info,  # ← ADD THIS LINE
+        language_info=language_info,
         conversation_history=[],
         session_context=None,
         is_followup_question=False,
@@ -132,7 +124,7 @@ def create_initial_state(text: str, session_id: Optional[str] = None,
         text_length=len(text)
     )
     
-    # CRITICAL FIX: Enhanced session context loading with proper debugging
+    # CRITICAL FIX: Enhanced session context loading with proper error handling
     try:
         workflow_logger.info("session_context_loading_started", session_id=actual_session_id)
         
@@ -168,42 +160,71 @@ def create_initial_state(text: str, session_id: Optional[str] = None,
                 history_length=len(conversation_history)
             )
             
-            # Extract context data safely
-            session_context_data = session_info.get("session_context", {})
-            ongoing_topics = session_context_data.get("ongoing_topics", [])
-            visa_types_mentioned = session_context_data.get("visa_types_mentioned", [])
-            
-            # Build session context object
-            state["session_context"] = SessionContext(
-                ongoing_topics=ongoing_topics,
-                visa_types_mentioned=visa_types_mentioned,
-                user_situation=session_context_data.get("user_situation"),
-                previous_questions_summary=session_manager.build_session_context_string(actual_session_id)
-            )
-            
-            # CRITICAL FIX: Enhanced follow-up question detection
-            state["is_followup_question"] = session_manager.detect_followup_question(
-                text, session_context_data
-            )
-            
-            workflow_logger.info(
-                "session_context_loaded_successfully",
-                session_id=actual_session_id,
-                history_turns=len(conversation_history),
-                is_followup=state['is_followup_question'],
-                ongoing_topics_count=len(ongoing_topics),
-                visa_types_count=len(visa_types_mentioned)
-            )
-            
-            # DEBUG: Log conversation history details
-            for i, turn in enumerate(conversation_history):
-                workflow_logger.debug(
-                    "conversation_turn_debug",
-                    session_id=actual_session_id,
-                    turn_number=i+1,
-                    question_preview=turn.question[:30],
-                    answer_preview=turn.answer[:50]
+            try:
+                # Extract context data safely - FIXED ERROR HANDLING
+                session_context_data = session_info.get("session_context", {})
+                
+                # Ensure session_context_data is a dict
+                if not isinstance(session_context_data, dict):
+                    workflow_logger.warning(
+                        "session_context_data_not_dict",
+                        session_id=actual_session_id,
+                        type_found=type(session_context_data).__name__
+                    )
+                    session_context_data = {}
+                
+                ongoing_topics = session_context_data.get("ongoing_topics", [])
+                visa_types_mentioned = session_context_data.get("visa_types_mentioned", [])
+                
+                # Ensure lists are actually lists
+                if not isinstance(ongoing_topics, list):
+                    ongoing_topics = []
+                if not isinstance(visa_types_mentioned, list):
+                    visa_types_mentioned = []
+                
+                # Build session context object
+                state["session_context"] = SessionContext(
+                    ongoing_topics=ongoing_topics,
+                    visa_types_mentioned=visa_types_mentioned,
+                    user_situation=session_context_data.get("user_situation"),
+                    previous_questions_summary=session_manager.build_session_context_string(actual_session_id)
                 )
+                
+                # CRITICAL FIX: Enhanced follow-up question detection with conversation history
+                is_followup = session_manager.detect_followup_question(text, session_context_data)
+                state["is_followup_question"] = is_followup
+                
+                workflow_logger.info(
+                    "session_context_loaded_successfully",
+                    session_id=actual_session_id,
+                    history_turns=len(conversation_history),
+                    is_followup=is_followup,
+                    ongoing_topics_count=len(ongoing_topics),
+                    visa_types_count=len(visa_types_mentioned)
+                )
+                
+                # DEBUG: Log conversation history details
+                for i, turn in enumerate(conversation_history):
+                    workflow_logger.debug(
+                        "conversation_turn_debug",
+                        session_id=actual_session_id,
+                        turn_number=i+1,
+                        question_preview=turn.question[:30],
+                        answer_preview=turn.answer[:50]
+                    )
+                    
+            except Exception as context_error:
+                workflow_logger.error(
+                    "session_context_building_error_detailed",
+                    session_id=actual_session_id,
+                    error_type=type(context_error).__name__,
+                    error_message=str(context_error),
+                    session_info_keys=list(session_info.keys()) if session_info else []
+                )
+                
+                # Set safe defaults for context building error
+                state["session_context"] = SessionContext()
+                state["is_followup_question"] = False
                 
         else:
             workflow_logger.info(
