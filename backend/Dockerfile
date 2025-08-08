@@ -34,8 +34,8 @@ RUN grep -v "^torch\|^sentence-transformers\|^#\|^$" requirements.txt > requirem
 # Create cache directory for models
 RUN mkdir -p /app/cache
 
-# Copy app source
-COPY . .
+# Copy app source maintaining backend structure
+COPY . ./backend
 
 # Set Python path so imports work correctly
 ENV PYTHONPATH="/app:$PYTHONPATH"
@@ -52,7 +52,7 @@ USER appuser
 EXPOSE 8088
 
 # Optimized startup with resource limits for 8GB RAM/8vCPU server
-CMD ["uvicorn", "code.api:app", \
+CMD ["uvicorn", "backend.code.api:app", \
      "--host", "0.0.0.0", \
      "--port", "8088", \
      "--workers", "4", \
