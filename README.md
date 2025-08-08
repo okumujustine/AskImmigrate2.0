@@ -99,7 +99,7 @@ User Question → Manager Agent → Synthesis Agent → Reviewer Agent → Respo
 ### Prerequisites
 - **Python**: 3.10+ (tested with 3.11)
 - **Node.js**: >=18.0.0 and <21.0.0 (for React frontend, optional)
-- **API Keys**: GROQ (recommended) or OpenAI + Tavily (required)
+- **API Keys**: Gemini (default) or GROQ/OpenAI + Tavily (required)
 
 ### Installation
 ```bash
@@ -122,7 +122,8 @@ cd ..
 Create `.env` file in the repository root directory:
 ```bash
 # Choose one LLM provider (REQUIRED):
-GROQ_API_KEY=your-groq-api-key          # Recommended: Fast + Free tier
+GEMINI_API_KEY=your-gemini-api-key      # Default: Free tier available (Get from: https://aistudio.google.com/app/apikey)
+# Alternative: GROQ_API_KEY=your-groq-api-key          # Fast + Free tier
 # Alternative: OPENAI_API_KEY=your-openai-api-key      # Requires billing
 
 # Web search functionality (REQUIRED)
@@ -298,8 +299,9 @@ graph TD
 ### **Model Selection**
 ```yaml
 # backend/config/config.yaml
-llm: llama3-8b-8192        # GROQ (recommended)
-# llm: gpt-4o-mini          # OpenAI alternative
+llm: gemini-2.5-flash      # Gemini (default)
+# llm: llama3-8b-8192      # GROQ alternative  
+# llm: gpt-4o-mini         # OpenAI alternative
 ```
 
 ### **Session Settings**
