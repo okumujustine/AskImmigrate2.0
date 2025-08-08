@@ -75,6 +75,7 @@ Create a `.env` file in the project root:
 
 ```env
 # LLM Configuration (choose one)
+GEMINI_API_KEY=your_gemini_api_key_here
 OPENAI_API_KEY=your_openai_api_key_here
 GROQ_API_KEY=your_groq_api_key_here
 HUGGINGFACE_API_TOKEN=your_hf_token_here
@@ -110,8 +111,9 @@ MAX_RETRIES=3
 #### Environment Variables Explained
 
 **Required Variables:**
-- `GROQ_API_KEY` or `OPENAI_API_KEY`: Choose one LLM provider
-  - Groq: Fast, free tier available - Get from [console.groq.com](https://console.groq.com/keys)
+- `GEMINI_API_KEY`, `GROQ_API_KEY` or `OPENAI_API_KEY`: Choose one LLM provider
+  - Gemini: Default, free tier available - Get from [aistudio.google.com](https://aistudio.google.com/app/apikey)
+  - Groq: Fast alternative, free tier available - Get from [console.groq.com](https://console.groq.com/keys)
   - OpenAI: Requires billing - Get from [platform.openai.com](https://platform.openai.com/api-keys)
 - `TAVILY_API_KEY`: Web search functionality - Get from [tavily.com](https://tavily.com)
 
@@ -249,7 +251,7 @@ docker-compose up -d --scale askimmigrate=3
 
 ### Application Configuration (`backend/config/config.yaml`)
 ```yaml
-llm: "gpt-4o-mini"
+llm: "gemini-2.5-flash"
 max_conversation_turns: 10
 session_timeout_hours: 24
 enable_web_search: true
@@ -466,7 +468,7 @@ python -c "from backend.code.session_manager import create_tables; create_tables
 # Test API connectivity
 python -c "
 from backend.code.llm import get_llm
-llm = get_llm('gpt-4o-mini')
+llm = get_llm('gemini-2.5-flash')
 print('LLM connection successful')
 "
 ```

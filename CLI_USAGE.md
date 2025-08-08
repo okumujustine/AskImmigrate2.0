@@ -13,12 +13,17 @@ python backend/code/cli.py --test --question "what is f1?"
 
 ### 2. Get API Keys
 
-#### Option A: GROQ API (Recommended - Faster)
+#### Option A: Gemini API (Default - Free)
+1. Visit [https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
+2. Sign up for a free account
+3. Create a new API key
+
+#### Option B: GROQ API (Fast Alternative)
 1. Visit [https://console.groq.com/keys](https://console.groq.com/keys)
 2. Sign up for a free account
 3. Create a new API key
 
-#### Option B: OpenAI API
+#### Option C: OpenAI API
 1. Visit [https://platform.openai.com/api-keys](https://platform.openai.com/api-keys)
 2. Create an account and add billing
 3. Generate an API key
@@ -27,10 +32,13 @@ python backend/code/cli.py --test --question "what is f1?"
 
 Create a `.env` file in the project root:
 ```bash
-# Option A: Use GROQ (faster, free tier)
+# Option A: Use Gemini (default, free tier)
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# Option B: Use GROQ (fast alternative, free tier)
 GROQ_API_KEY=your_groq_api_key_here
 
-# Option B: Use OpenAI 
+# Option C: Use OpenAI 
 OPENAI_API_KEY=your_openai_api_key_here
 
 # Optional: Enable LangSmith tracing for debugging
@@ -41,7 +49,7 @@ LANGSMITH_PROJECT=AskImmigrate2.0
 
 Or export environment variables:
 ```bash
-export GROQ_API_KEY=your_groq_api_key_here
+export GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
 ## 🚀 Multi-Agent Workflow (Recommended)
