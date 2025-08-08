@@ -36,6 +36,9 @@ RUN mkdir -p /app/cache
 # Copy app source
 COPY . .
 
+# Set Python path so imports work correctly
+ENV PYTHONPATH="/app:$PYTHONPATH"
+
 # Pre-download the all-mpnet-base-v2 model during build
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-mpnet-base-v2')"
 
