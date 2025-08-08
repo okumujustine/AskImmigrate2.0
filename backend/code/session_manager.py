@@ -14,14 +14,7 @@ SESSIONS_DB_PATH = os.path.join(OUTPUTS_DIR, "agentic_sessions.db")
 
 class SessionManager:
     """
-    Enhanced session manager for agentic workflow with comprehensive debugging.
-    
-    CHANGES:
-    - Added session ID sanitization to handle whitespace issues
-    - Enhanced error handling and debugging throughout
-    - Better database connection management
-    - Improved session context loading and validation
-    - Added comprehensive logging for debugging
+    Enhanced session manager for agentic workflow with comprehensive debugging and language support.
     """
     
     def __init__(self, db_path: str = SESSIONS_DB_PATH):
@@ -30,11 +23,7 @@ class SessionManager:
         session_logger.info("session_manager_initialized", db_path=db_path)
     
     def _sanitize_session_id(self, session_id: str) -> str:
-        """
-        Sanitize session ID to handle whitespace and other issues.
-        
-        CHANGES: New method to fix session ID handling issues
-        """
+        """Sanitize session ID to handle whitespace and other issues."""
         if not session_id:
             return session_id
         
@@ -52,14 +41,7 @@ class SessionManager:
         return cleaned
     
     def _init_database(self):
-        """
-        Initialize the sessions database with enhanced error handling.
-        
-        CHANGES:
-        - Better error handling for database creation
-        - Validation that tables were created successfully
-        - Enhanced logging
-        """
+        """Initialize the sessions database with enhanced error handling."""
         try:
             os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
             session_logger.info("database_directory_ensured", db_dir=os.path.dirname(self.db_path))
@@ -73,45 +55,45 @@ class SessionManager:
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             turn_count INTEGER DEFAULT 0,
-                        session_context TEXT  -- JSON serialized SessionContext
-                    )
-                """)
+                            session_context TEXT  -- JSON serialized SessionContext
+                        )
+                    """)
                 
-                # Create conversation_turns table
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS conversation_turns (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        session_id TEXT,
-                        turn_number INTEGER,
-                        question TEXT,
-                        answer TEXT,
-                        timestamp TIMESTAMP,
-                        question_type TEXT,
-                        visa_focus TEXT,  -- JSON serialized list
-                        tools_used TEXT,  -- JSON serialized list
-                        agent_metadata TEXT,  -- JSON serialized dict
-                        FOREIGN KEY (session_id) REFERENCES sessions (session_id)
-                    )
-                """)
+                    # Create conversation_turns table
+                    conn.execute("""
+                        CREATE TABLE IF NOT EXISTS conversation_turns (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            session_id TEXT,
+                            turn_number INTEGER,
+                            question TEXT,
+                            answer TEXT,
+                            timestamp TIMESTAMP,
+                            question_type TEXT,
+                            visa_focus TEXT,  -- JSON serialized list
+                            tools_used TEXT,  -- JSON serialized list
+                            agent_metadata TEXT,  -- JSON serialized dict
+                            FOREIGN KEY (session_id) REFERENCES sessions (session_id)
+                        )
+                    """)
                 
-                # Create indexes
-                conn.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_session_turns 
-                    ON conversation_turns (session_id, turn_number)
-                """)
+                    # Create indexes
+                    conn.execute("""
+                        CREATE INDEX IF NOT EXISTS idx_session_turns 
+                        ON conversation_turns (session_id, turn_number)
+                    """)
                 
-                # Validate tables exist
-                cursor = conn.cursor()
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-                tables = [row[0] for row in cursor.fetchall()]
+                    # Validate tables exist
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                    tables = [row[0] for row in cursor.fetchall()]
                 
-                expected_tables = ['sessions', 'conversation_turns']
-                missing_tables = [t for t in expected_tables if t not in tables]
+                    expected_tables = ['sessions', 'conversation_turns']
+                    missing_tables = [t for t in expected_tables if t not in tables]
                 
-                if missing_tables:
-                    raise Exception(f"Failed to create tables: {missing_tables}")
+                    if missing_tables:
+                        raise Exception(f"Failed to create tables: {missing_tables}")
                 
-                session_logger.info("database_initialized_successfully", tables=tables)
+                    session_logger.info("database_initialized_successfully", tables=tables)
                 
         except Exception as e:
             session_logger.error(
@@ -122,15 +104,7 @@ class SessionManager:
             raise
     
     def get_or_create_session(self, session_id: str = None) -> Dict[str, Any]:
-        """
-        Get existing session or create new one with enhanced debugging.
-        
-        CHANGES:
-        - Added session ID sanitization
-        - Enhanced debugging and logging
-        - Better error handling for database operations
-        - Validation of session data retrieval
-        """
+        """Get existing session or create new one with enhanced debugging."""
         
         # Sanitize session ID
         if session_id:
@@ -208,15 +182,7 @@ class SessionManager:
             raise
     
     def load_conversation_history(self, session_id: str, limit: int = 10) -> List[ConversationTurn]:
-        """
-        Load conversation history with enhanced debugging.
-        
-        CHANGES:
-        - Added session ID sanitization
-        - Enhanced debugging and error handling
-        - Better validation of returned data
-        - Detailed logging of what's retrieved
-        """
+        """Load conversation history with enhanced debugging."""
         
         session_id = self._sanitize_session_id(session_id)
         session_logger.info("loading_conversation_history", 
@@ -278,18 +244,269 @@ class SessionManager:
                                 error_type=type(e).__name__,
                                 error_message=str(e))
             return []
+
+    def get_session_language_preference(self, session_id: str) -> Optional[str]:
+        """Get the preferred language for a session with enhanced debugging."""
+        session_id = self._sanitize_session_id(session_id)
+        
+        session_logger.info("get_session_language_preference_started", session_id=session_id)
+        
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                
+                # Check if session exists first
+                session_check = conn.execute(
+                    "SELECT session_id, session_context FROM sessions WHERE session_id = ?",
+                    (session_id,)
+                ).fetchone()
+                
+                if not session_check:
+                    session_logger.warning("Session not found in database", session_id=session_id)
+                    return None
+                
+                session_context_raw = session_check["session_context"]
+                session_logger.debug("Session context raw data", 
+                                    session_id=session_id, 
+                                    context_preview=str(session_context_raw)[:100])
+                
+                if session_context_raw:
+                    try:
+                        context_data = json.loads(session_context_raw)
+                        session_logger.debug("Session context parsed successfully", 
+                                            session_id=session_id,
+                                            context_keys=list(context_data.keys()))
+                        
+                        preferred_language = context_data.get("preferred_language")
+                        
+                        if preferred_language:
+                            session_logger.info(
+                                "session_language_preference_found_from_context",
+                                session_id=session_id,
+                                preferred_language=preferred_language,
+                                source="session_context"
+                            )
+                            return preferred_language
+                        else:
+                            session_logger.debug("No preferred_language key in context", 
+                                                session_id=session_id,
+                                                available_keys=list(context_data.keys()))
+                            
+                    except json.JSONDecodeError as e:
+                        session_logger.warning(
+                            "invalid_session_context_json_detailed",
+                            session_id=session_id,
+                            json_error=str(e),
+                            raw_context=str(session_context_raw)[:200]
+                        )
+                else:
+                    session_logger.debug("Session context is empty or null", session_id=session_id)
+                
+                # Fallback: analyze recent conversation turns for language patterns
+                session_logger.debug("Trying fallback language detection from conversation history", 
+                                    session_id=session_id)
+                
+                recent_turns = conn.execute("""
+                    SELECT answer FROM conversation_turns 
+                    WHERE session_id = ? 
+                    ORDER BY turn_number DESC 
+                    LIMIT 3
+                """, (session_id,)).fetchall()
+                
+                session_logger.debug("Found conversation turns for fallback", 
+                                    session_id=session_id, 
+                                    turn_count=len(recent_turns))
+                
+                if recent_turns:
+                    for i, turn in enumerate(recent_turns):
+                        answer = turn[0]
+                        
+                        # Look for language-specific verification phrases
+                        if "Vérifiez les informations actuelles sur uscis.gov" in answer:
+                            session_logger.info(
+                                "session_language_detected_from_history_french",
+                                session_id=session_id,
+                                detected_language="fr",
+                                source="conversation_analysis"
+                            )
+                            return "fr"
+                        elif "Verifica la información actual en uscis.gov" in answer:
+                            session_logger.info(
+                                "session_language_detected_from_history_spanish",
+                                session_id=session_id,
+                                detected_language="es",
+                                source="conversation_analysis"
+                            )
+                            return "es"
+                        elif "Verifique as informações atuais em uscis.gov" in answer:
+                            session_logger.info(
+                                "session_language_detected_from_history_portuguese",
+                                session_id=session_id,
+                                detected_language="pt",
+                                source="conversation_analysis"
+                            )
+                            return "pt"
+                
+                session_logger.info(
+                    "no_session_language_preference_found_final",
+                    session_id=session_id
+                )
+                return None
+                
+        except Exception as e:
+            session_logger.error(
+                "error_getting_session_language_preference_detailed",
+                session_id=session_id,
+                error_message=str(e),
+                error_type=type(e).__name__
+            )
+            return None
+
+    def set_session_language_preference(self, session_id: str, language_code: str, confidence: float = 1.0) -> None:
+        """Set or update the language preference for a session."""
+        session_id = self._sanitize_session_id(session_id)
+        
+        session_logger.info("set_session_language_preference_started", 
+                          session_id=session_id,
+                          language_code=language_code,
+                          confidence=confidence)
+        
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                # Ensure session exists first
+                self.get_or_create_session(session_id)
+                
+                # Get current context
+                current_context = conn.execute(
+                    "SELECT session_context FROM sessions WHERE session_id = ?",
+                    (session_id,)
+                ).fetchone()
+                
+                context_data = {}
+                if current_context and current_context[0]:
+                    try:
+                        context_data = json.loads(current_context[0])
+                        session_logger.debug("Existing context loaded", 
+                                           session_id=session_id,
+                                           existing_keys=list(context_data.keys()))
+                    except json.JSONDecodeError:
+                        session_logger.warning("Invalid JSON in existing session context", session_id=session_id)
+                        context_data = {}
+                
+                # Update language preference
+                context_data["preferred_language"] = language_code
+                context_data["language_confidence"] = confidence
+                context_data["language_last_updated"] = datetime.now().isoformat()
+                
+                session_logger.debug("Updated context data", 
+                                    session_id=session_id,
+                                    context_keys=list(context_data.keys()),
+                                    preferred_language=context_data.get("preferred_language"))
+                
+                # Update database
+                rows_updated = conn.execute(
+                    "UPDATE sessions SET session_context = ?, updated_at = ? WHERE session_id = ?",
+                    (json.dumps(context_data), datetime.now().isoformat(), session_id)
+                ).rowcount
+                
+                if rows_updated == 0:
+                    session_logger.error("Failed to update session context - no rows affected", 
+                                       session_id=session_id)
+                    return
+                
+                # Verification: Check if the update worked
+                verify_context = conn.execute(
+                    "SELECT session_context FROM sessions WHERE session_id = ?",
+                    (session_id,)
+                ).fetchone()
+                
+                if verify_context and verify_context[0]:
+                    try:
+                        verify_data = json.loads(verify_context[0])
+                        stored_language = verify_data.get("preferred_language")
+                        if stored_language == language_code:
+                            session_logger.info(
+                                "session_language_preference_updated_verified",
+                                session_id=session_id,
+                                language_code=language_code,
+                                confidence=confidence
+                            )
+                        else:
+                            session_logger.error(
+                                "session_language_preference_verification_failed",
+                                session_id=session_id,
+                                expected=language_code,
+                                actual=stored_language
+                            )
+                    except json.JSONDecodeError:
+                        session_logger.error("Verification failed - invalid JSON after update", 
+                                           session_id=session_id)
+                
+        except Exception as e:
+            session_logger.error(
+                "error_setting_session_language_preference",
+                session_id=session_id,
+                language_code=language_code,
+                error_message=str(e)
+            )
+
+    def should_maintain_session_language(self, session_id: str, new_detected_language: str, 
+                                       new_confidence: float) -> tuple:
+        """Determine if we should maintain session language or switch to newly detected language."""
+        session_id = self._sanitize_session_id(session_id)
+        
+        session_logger.info("should_maintain_session_language_started",
+                          session_id=session_id,
+                          new_detected_language=new_detected_language,
+                          new_confidence=new_confidence)
+        
+        # Get current session language preference
+        session_language = self.get_session_language_preference(session_id)
+        
+        if not session_language:
+            # No session preference - use new detection
+            session_logger.info(
+                "no_session_language_using_new_detection",
+                session_id=session_id,
+                new_language=new_detected_language,
+                confidence=new_confidence
+            )
+            return False, new_detected_language
+        
+        # We have a session language preference
+        if session_language == new_detected_language:
+            # Same language - maintain
+            session_logger.info(
+                "same_language_maintaining_session",
+                session_id=session_id,
+                session_language=session_language
+            )
+            return True, session_language
+        
+        # Different language detected
+        if new_confidence > 0.85:  # High confidence threshold for language switching
+            session_logger.info(
+                "high_confidence_language_switch",
+                session_id=session_id,
+                from_language=session_language,
+                to_language=new_detected_language,
+                confidence=new_confidence
+            )
+            return False, new_detected_language
+        else:
+            # Low confidence - maintain session language
+            session_logger.info(
+                "low_confidence_maintaining_session_language",
+                session_id=session_id,
+                session_language=session_language,
+                new_detected=new_detected_language,
+                confidence=new_confidence
+            )
+            return True, session_language
     
     def save_conversation_turn(self, session_id: str, turn: ConversationTurn, 
                              final_state: ImmigrationState) -> None:
-        """
-        Save conversation turn with enhanced debugging and validation.
-        
-        CHANGES:
-        - Added session ID sanitization
-        - Enhanced validation of input data
-        - Better error handling and debugging
-        - Transaction rollback on failure
-        """
+        """Save conversation turn with enhanced debugging and validation."""
         
         correlation_id = start_request_tracking()
         session_id = self._sanitize_session_id(session_id)
@@ -317,93 +534,71 @@ class SessionManager:
                     # Start transaction
                     conn.execute("BEGIN")
                 
-                try:
-                    # Get current turn count with validation
-                    current_session = conn.execute(
-                        "SELECT turn_count FROM sessions WHERE session_id = ?",
-                        (session_id,)
-                    ).fetchone()
-                    
-                    if not current_session:
-                        session_logger.error("session_not_found_during_save", session_id=session_id)
-                        # Try to create the session
-                        conn.execute(
-                            """INSERT INTO sessions (session_id, session_context, turn_count) 
-                               VALUES (?, ?, ?)""",
-                            (session_id, json.dumps({}), 0)
-                        )
-                        new_turn_number = 1
-                    else:
-                        new_turn_number = current_session[0] + 1
-                    
-                    session_logger.info("saving_turn", session_id=session_id, turn_number=new_turn_number)
-                    
-                    # Insert conversation turn
-                    conn.execute("""
-                        INSERT INTO conversation_turns 
-                        (session_id, turn_number, question, answer, timestamp, 
-                         question_type, visa_focus, tools_used, agent_metadata)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        session_id,
-                        new_turn_number,
-                        turn.question,
-                        turn.answer,
-                        turn.timestamp,
-                        turn.question_type,
-                        json.dumps(turn.visa_focus) if turn.visa_focus else None,
-                        json.dumps(turn.tools_used) if turn.tools_used else None,
-                        json.dumps(final_state.get("synthesis_metadata", {}))
-                    ))
-                    
-                    # Update session context
-                    updated_context = self._update_session_context(session_id, final_state, conn)
-                    
-                    # Update session
-                    conn.execute("""
-                        UPDATE sessions 
-                        SET turn_count = ?, updated_at = ?, session_context = ?
-                        WHERE session_id = ?
-                    """, (
-                        new_turn_number,
-                        datetime.now().isoformat(),
-                        json.dumps(updated_context),
-                        session_id
-                    ))
-                    
-                    # Commit transaction
-                    conn.execute("COMMIT")
-                    
-                    session_logger.info("conversation_turn_saved_successfully", 
-                                       session_id=session_id, 
-                                       turn_number=new_turn_number)
-                    
-                    # Verify the save
-                    verify = conn.execute(
-                        "SELECT turn_count FROM sessions WHERE session_id = ?",
-                        (session_id,)
-                    ).fetchone()
-                    
-                    if verify and verify[0] == new_turn_number:
-                        session_logger.info("Session turn count verified", extra={
-                            "event": "session_turn_count_verified",
-                            "session_id": session_id,
-                            "verified_turn_count": verify[0],
-                            "correlation_id": correlation_id
-                        })
-                    else:
-                        session_logger.warning("Turn count verification failed", extra={
-                            "event": "turn_count_verification_failed",
-                            "session_id": session_id,
-                            "expected_count": new_turn_number,
-                            "actual_count": verify[0] if verify else None,
-                            "correlation_id": correlation_id
-                        })
+                    try:
+                        # Get current turn count with validation
+                        current_session = conn.execute(
+                            "SELECT turn_count FROM sessions WHERE session_id = ?",
+                            (session_id,)
+                        ).fetchone()
                         
-                except Exception as e:
-                    conn.execute("ROLLBACK")
-                    raise e
-                    
+                        if not current_session:
+                            session_logger.error("session_not_found_during_save", session_id=session_id)
+                            # Try to create the session
+                            conn.execute(
+                                """INSERT INTO sessions (session_id, session_context, turn_count) 
+                                   VALUES (?, ?, ?)""",
+                                (session_id, json.dumps({}), 0)
+                            )
+                            new_turn_number = 1
+                        else:
+                            new_turn_number = current_session[0] + 1
+                        
+                        session_logger.info("saving_turn", session_id=session_id, turn_number=new_turn_number)
+                        
+                        # Insert conversation turn
+                        conn.execute("""
+                            INSERT INTO conversation_turns 
+                            (session_id, turn_number, question, answer, timestamp, 
+                             question_type, visa_focus, tools_used, agent_metadata)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            session_id,
+                            new_turn_number,
+                            turn.question,
+                            turn.answer,
+                            turn.timestamp,
+                            turn.question_type,
+                            json.dumps(turn.visa_focus) if turn.visa_focus else None,
+                            json.dumps(turn.tools_used) if turn.tools_used else None,
+                            json.dumps(final_state.get("synthesis_metadata", {}))
+                        ))
+                        
+                        # Update session context
+                        updated_context = self._update_session_context(session_id, final_state, conn)
+                        
+                        # Update session
+                        conn.execute("""
+                            UPDATE sessions 
+                            SET turn_count = ?, updated_at = ?, session_context = ?
+                            WHERE session_id = ?
+                        """, (
+                            new_turn_number,
+                            datetime.now().isoformat(),
+                            json.dumps(updated_context),
+                            session_id
+                        ))
+                        
+                        # Commit transaction
+                        conn.execute("COMMIT")
+                        
+                        session_logger.info("conversation_turn_saved_successfully", 
+                                           session_id=session_id, 
+                                           turn_number=new_turn_number)
+                        
+                    except Exception as e:
+                        conn.execute("ROLLBACK")
+                        raise e
+                        
         except Exception as e:
             session_logger.error("conversation_turn_save_failed",
                                 session_id=session_id,
@@ -412,24 +607,10 @@ class SessionManager:
                                 question_preview=turn.question[:50],
                                 answer_length=len(turn.answer),
                                 correlation_id=correlation_id)
-            import traceback
-            session_logger.error("conversation_turn_save_traceback", extra={
-                "event": "conversation_turn_save_traceback",
-                "session_id": session_id,
-                "traceback": traceback.format_exc(),
-                "correlation_id": correlation_id
-            })
-    
+
     def _update_session_context(self, session_id: str, final_state: ImmigrationState, 
                                conn: sqlite3.Connection = None) -> Dict[str, Any]:
-        """
-        Update session context with enhanced error handling.
-        
-        CHANGES:
-        - Better handling of missing data
-        - Enhanced logging of context updates
-        - More robust context building
-        """
+        """Update session context with language tracking and enhanced error handling."""
         
         correlation_id = start_request_tracking()
         session_logger.info("Session context update started", extra={
@@ -484,12 +665,41 @@ class SessionManager:
             ongoing_topics = ongoing_topics[-5:]
             visa_types_mentioned = visa_types_mentioned[-10:]
             
+            # ENHANCED: Update language tracking from final_state
+            detected_language = final_state.get("detected_language")
+            language_confidence = final_state.get("language_confidence", 0.0)
+            
+            session_logger.info("Language tracking info from final_state", extra={
+                "event": "language_tracking_from_final_state",
+                "session_id": session_id,
+                "detected_language": detected_language,
+                "language_confidence": language_confidence,
+                "correlation_id": correlation_id
+            })
+            
+            if detected_language and language_confidence > 0.7:
+                context_data["preferred_language"] = detected_language
+                context_data["language_confidence"] = language_confidence
+                context_data["language_last_updated"] = datetime.now().isoformat()
+                
+                session_logger.info("Language preference updated in context", extra={
+                    "event": "language_preference_updated_in_context",
+                    "session_id": session_id,
+                    "language": detected_language,
+                    "confidence": language_confidence,
+                    "correlation_id": correlation_id
+                })
+            
             updated_context = {
                 "ongoing_topics": ongoing_topics,
                 "visa_types_mentioned": visa_types_mentioned,
                 "user_situation": context_data.get("user_situation"),
                 "last_question_type": final_state.get("question_type"),
-                "last_complexity": final_state.get("complexity")
+                "last_complexity": final_state.get("complexity"),
+                # Language tracking fields
+                "preferred_language": context_data.get("preferred_language"),
+                "language_confidence": context_data.get("language_confidence"),
+                "language_last_updated": context_data.get("language_last_updated")
             }
             
             session_logger.info("Session context updated successfully", extra={
@@ -497,6 +707,7 @@ class SessionManager:
                 "session_id": session_id,
                 "ongoing_topics": ongoing_topics,
                 "visa_types_mentioned": visa_types_mentioned,
+                "preferred_language": updated_context.get("preferred_language"),
                 "correlation_id": correlation_id
             })
             return updated_context
@@ -511,56 +722,10 @@ class SessionManager:
             })
             return {"ongoing_topics": [], "visa_types_mentioned": []}
     
-    def build_session_context_string(self, session_id: str) -> str:
-        """Build context string with enhanced error handling."""
-        
-        session_id = self._sanitize_session_id(session_id)
-        
-        try:
-            session_info = self.get_or_create_session(session_id)
-            conversation_history = self.load_conversation_history(session_id, limit=3)
-            
-            if not conversation_history:
-                return ""
-            
-            context_parts = []
-            context_parts.append("CONVERSATION CONTEXT:")
-            context_parts.append(f"• Session: {session_id}")
-            context_parts.append(f"• Total turns: {session_info['turn_count']}")
-            
-            # Add recent topics
-            context_data = session_info.get("session_context", {})
-            if context_data.get("ongoing_topics"):
-                context_parts.append(f"• Topics discussed: {', '.join(context_data['ongoing_topics'])}")
-            
-            if context_data.get("visa_types_mentioned"):
-                context_parts.append(f"• Visa types mentioned: {', '.join(context_data['visa_types_mentioned'])}")
-            
-            # Add recent conversation
-            if conversation_history:
-                context_parts.append("\nRECENT CONVERSATION:")
-                for i, turn in enumerate(conversation_history[-2:], 1):
-                    context_parts.append(f"Q{i}: {turn.question}")
-                    context_parts.append(f"A{i}: {turn.answer[:200]}...")
-            
-            return "\n".join(context_parts)
-            
-        except Exception as e:
-            correlation_id = start_request_tracking()
-            session_logger.error("Error building context string", extra={
-                "event": "context_string_build_error",
-                "session_id": session_id,
-                "error": str(e),
-                "error_type": type(e).__name__,
-                "correlation_id": correlation_id
-            })
-            return ""
-    
     def detect_followup_question(self, current_question: str, session_context: Dict[str, Any]) -> bool:
         """Enhanced follow-up question detection with better precision."""
         
         # Strong follow-up indicators
-        # Expanded strong follow-up indicators for better detection
         strong_followup_indicators = [
             "it", "that", "this", "what about", "can i also", "and what", "follow up",
             "additionally", "furthermore", "next step", "after that", "my first", "previous",
@@ -572,7 +737,6 @@ class SessionManager:
         ]
         
         # Session reference indicators (very strong)
-        # Expanded session reference indicators for better follow-up detection
         session_references = [
             "first", "previous", "earlier", "what did i", "what was", "before", "last",
             "my last question", "my previous question", "the last answer", "the previous answer",
@@ -591,8 +755,7 @@ class SessionManager:
         has_strong_followup_words = any(indicator in question_lower for indicator in strong_followup_indicators)
         
         # Check question length and immigration terms
-        is_short_question = len(current_question.split()) < 6  # More restrictive
-        # Expanded immigration-related terms for better detection
+        is_short_question = len(current_question.split()) < 6
         immigration_terms = [
             "visa", "green card", "citizenship", "naturalization", "h1b", "f1", "opt", "uscis", "immigration",
             "permanent resident", "work permit", "asylum", "refugee", "i-140", "i-485", "i-20", "ds-160",
@@ -602,15 +765,12 @@ class SessionManager:
         has_immigration_terms = any(term in question_lower for term in immigration_terms)
         
         # IMPROVED LOGIC: More precise detection
-        # 1. Explicit session references = definitely follow-up
         if has_session_references:
             is_followup = True
             reason = "explicit session reference"
-        # 2. Strong follow-up words = likely follow-up
         elif has_strong_followup_words:
             is_followup = True
             reason = "strong follow-up indicators"
-        # 3. Check for related topics from previous context
         elif session_context.get("ongoing_topics"):
             # Extract topics and terms from previous context
             prev_topics = set(session_context.get("ongoing_topics", []))
@@ -627,12 +787,12 @@ class SessionManager:
                 is_followup = False
                 reason = "no related terms found in context"
             
-        # 4. Very short questions without immigration terms = might be follow-up
+        # Very short questions without immigration terms = might be follow-up
         elif is_short_question and not has_immigration_terms and len(current_question.split()) <= 3:
             is_followup = True
             reason = "very short non-immigration question"
             
-        # 5. Everything else = not follow-up
+        # Everything else = not follow-up
         else:
             is_followup = False
             reason = "appears to be new question"
@@ -676,9 +836,7 @@ class SessionManager:
             return []
 
     def get_unique_session_ids(self) -> List[str]:
-        """
-        Returns a list of all unique session IDs in the sessions table.
-        """
+        """Returns a list of all unique session IDs in the sessions table."""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.execute("SELECT DISTINCT session_id FROM sessions")
@@ -694,32 +852,18 @@ class SessionManager:
             })
             return []
 
-    from typing import List, Dict, Any
-    import sqlite3
-
     def get_answers_by_session(self, session_id: str) -> List[Dict[str, Any]]:
-        """
-        Return *all* (question, answer) rows for the given session_id.
-
-        Example result:
-            [
-                {"question": "Hi?", "answer": "Hello!"},
-                {"question": "How are you?", "answer": "Great."},
-                ...
-            ]
-
-        Empty list ⇢ no rows found.
-        """
+        """Return *all* (question, answer) rows for the given session_id."""
         try:
             with sqlite3.connect(self.db_path) as conn:
-                conn.row_factory = sqlite3.Row  # map-like rows
+                conn.row_factory = sqlite3.Row
                 cursor = conn.execute(
                     "SELECT question, answer FROM conversation_turns WHERE session_id = ?",
                     (session_id,)
                 )
-                rows = cursor.fetchall()  # all rows
-                return [dict(r) for r in rows]  # list[dict]
-        except sqlite3.Error as e:  # narrow the catch
+                rows = cursor.fetchall()
+                return [dict(r) for r in rows]
+        except sqlite3.Error as e:
             correlation_id = start_request_tracking()
             session_logger.error("Database error getting answers by session", extra={
                 "event": "get_answers_db_error",
@@ -731,9 +875,7 @@ class SessionManager:
             return []
 
     def get_last_answer_by_session(self, session_id: str) -> Optional[str]:
-        """
-        Retrieves the last answer for a specific session_id.
-        """
+        """Retrieves the last answer for a specific session_id."""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
@@ -752,6 +894,64 @@ class SessionManager:
                 "correlation_id": correlation_id
             })
             return None
-    
+
 # Global session manager instance
 session_manager = SessionManager()
+
+# ENHANCED TEST with detailed debugging
+if __name__ == "__main__":
+    print("🧪 ENHANCED Testing Session Manager Language Methods...")
+    
+    # Create test session manager
+    test_manager = SessionManager()
+    test_session_id = "test-lang-session-debug"
+    
+    print(f"\n📝 Using test session ID: {test_session_id}")
+    
+    # Test 1: Create session first
+    print("\n1️⃣ Creating/getting session...")
+    session_info = test_manager.get_or_create_session(test_session_id)
+    print(f"   Session created: {session_info['session_id']}")
+    
+    # Test 2: Set language preference
+    print("\n2️⃣ Setting French language preference...")
+    test_manager.set_session_language_preference(test_session_id, "fr", 0.9)
+    
+    # Test 3: Get language preference immediately
+    print("\n3️⃣ Getting language preference...")
+    lang = test_manager.get_session_language_preference(test_session_id)
+    print(f"   Retrieved language: {lang}")
+    
+    # Test 4: Should maintain language
+    print("\n4️⃣ Testing should maintain language...")
+    should_maintain, final_lang = test_manager.should_maintain_session_language(test_session_id, "en", 0.7)
+    print(f"   Should maintain: {should_maintain}, Final language: {final_lang}")
+    
+    # Test 5: Direct database check
+    print("\n5️⃣ Direct database verification...")
+    import sqlite3
+    with sqlite3.connect(test_manager.db_path) as conn:
+        result = conn.execute(
+            "SELECT session_context FROM sessions WHERE session_id = ?", 
+            (test_session_id,)
+        ).fetchone()
+        if result:
+            print(f"   Raw session context: {result[0]}")
+            if result[0]:
+                try:
+                    import json
+                    context = json.loads(result[0])
+                    print(f"   Parsed context: {context}")
+                    print(f"   Preferred language: {context.get('preferred_language', 'NOT FOUND')}")
+                except:
+                    print("   Error parsing JSON")
+        else:
+            print("   No session found in database!")
+    
+    print(f"\n🎯 RESULT:")
+    if lang == "fr" and should_maintain and final_lang == "fr":
+        print("   ✅ SUCCESS: Language methods working correctly!")
+    else:
+        print("   ❌ FAILED: Language methods need fixing")
+        print(f"   Expected: lang='fr', should_maintain=True, final_lang='fr'")
+        print(f"   Actual: lang='{lang}', should_maintain={should_maintain}, final_lang='{final_lang}'")

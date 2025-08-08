@@ -1,5 +1,4 @@
 import type { Message } from '../types/chat';
-import { mockAskQuestion } from './mockApi';
 import { getPersistentBrowserFingerprint } from './browserFingerprint';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8088';
@@ -48,24 +47,24 @@ const cleanAnswer = (answer: string, question: string): string => {
 export const askQuestion = async (
   question: string,
   userId: string,
-  chatSessionId?: string
+  chatSessionId?: string  // Only pass this if continuing existing session
 ): Promise<{ message: Message; sessionId: string }> => {
   const clientFingerprint = getPersistentBrowserFingerprint();
   
   const requestBody: { 
     question: string; 
     client_fingerprint: string;
-    session_id?: string;
+    session_id?: string;  // Only include if we have an existing session
   } = {
     question,
     client_fingerprint: clientFingerprint,
   };
 
-  // CHANGE: Only send session_id if it's a real backend session (not frontend temp)
+  // Only add session_id if we're continuing an existing conversation
   if (chatSessionId && !chatSessionId.startsWith('new-')) {
     requestBody.session_id = chatSessionId;
   }
-  // If no valid session_id, backend will create new session
+  // If chatSessionId is undefined or starts with 'new-', let backend create new session
 
   const response = await fetch(`${API_BASE_URL}/query`, {
     method: 'POST',
@@ -82,7 +81,7 @@ export const askQuestion = async (
       answer: cleanAnswer(data.answer, question),
       timestamp: new Date(),
     },
-    sessionId: data.session_id
+    sessionId: data.session_id  // Use whatever session ID backend returns
   };
 };
 

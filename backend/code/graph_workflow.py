@@ -54,7 +54,8 @@ def create_ask_immigrate_graph() -> CompiledStateGraph:
     workflow_logger.info("graph_structure_completed")
     return graph.compile()
 
-def create_initial_state(text: str, session_id: Optional[str] = None) -> ImmigrationState:
+def create_initial_state(text: str, session_id: Optional[str] = None, 
+                        language_info: Optional[Dict[str, Any]] = None) -> ImmigrationState:
     """
     Create enhanced initial state with COMPLETE session support and debugging.
     
@@ -70,7 +71,8 @@ def create_initial_state(text: str, session_id: Optional[str] = None) -> Immigra
     workflow_logger.info(
         "initial_state_creation_started",
         text_length=len(text),
-        session_id=session_id
+        session_id=session_id,
+        user_language=language_info.get("language", "unknown") if language_info else "unknown"
     )
     
     # CRITICAL FIX: Sanitize session ID to remove whitespace
@@ -96,6 +98,7 @@ def create_initial_state(text: str, session_id: Optional[str] = None) -> Immigra
         text=text,
         user_question=text,
         session_id=actual_session_id,
+        language_info=language_info,  # ← ADD THIS LINE
         conversation_history=[],
         session_context=None,
         is_followup_question=False,
@@ -297,7 +300,7 @@ def save_conversation_result(final_state: ImmigrationState) -> None:
                 tools_used=final_state.get("tools_used", [])
             )
             
-            # Save to session with enhanced error handling
+            # FIXED: Remove the language_info parameter - it's not needed
             session_manager.save_conversation_turn(session_id, turn, final_state)
         
         workflow_logger.info("conversation_save_successful", session_id=session_id)
@@ -339,7 +342,8 @@ def visualize_graph(graph: StateGraph, save_path: str = OUTPUTS_DIR):
             details="Graph structure is still functional, just visualization failed"
         )
 
-def run_agentic_askimmigrate(text: str, session_id: Optional[str] = None) -> Dict[str, Any]:
+def run_agentic_askimmigrate(text: str, session_id: Optional[str] = None,
+                           language_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Enhanced function to run the strategic immigration workflow with COMPLETE session support.
     
@@ -358,13 +362,14 @@ def run_agentic_askimmigrate(text: str, session_id: Optional[str] = None) -> Dic
         "agentic_workflow_started",
         correlation_id=correlation_id,
         question_length=len(text),
-        session_id=session_id
+        session_id=session_id,
+        user_language=language_info.get("language", "unknown") if language_info else "unknown"
     )
     
     # CRITICAL FIX: Handle potential None return from create_initial_state
     try:
         with PerformanceTimer(workflow_logger, "initial_state_creation", correlation_id=correlation_id):
-            initial_state = create_initial_state(text, session_id)
+            initial_state = create_initial_state(text, session_id, language_info)  # ← ADD language_info parameter
         
         # GUARANTEE we have a valid state
         if initial_state is None:
@@ -376,6 +381,7 @@ def run_agentic_askimmigrate(text: str, session_id: Optional[str] = None) -> Dic
             initial_state = ImmigrationState(
                 text=text,
                 session_id=session_id or f"emergency-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+                language_info=language_info or {"language": "en", "confidence": 0.9},  # ← ADD language_info fallback
                 conversation_history=[],
                 session_context=SessionContext(),
                 is_followup_question=False,
@@ -408,6 +414,7 @@ def run_agentic_askimmigrate(text: str, session_id: Optional[str] = None) -> Dic
         initial_state = ImmigrationState(
             text=text,
             session_id=actual_session_id,
+            language_info=language_info or {"language": "en", "confidence": 0.9},  # ← ADD language_info fallback
             conversation_history=[],
             session_context=SessionContext(),
             is_followup_question=False,
@@ -540,6 +547,7 @@ For immediate help with immigration questions:
             "tools_used": [],
             "text": text,
             "session_id": actual_session_id,  # Preserve session even in error
+            "language_info": language_info or {"language": "en", "confidence": 0.9},
             "workflow_parameters": {
                 "question_type": "error",
                 "complexity": "unknown",

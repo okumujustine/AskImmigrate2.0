@@ -25,19 +25,27 @@ class SessionContext(BaseModel):
         arbitrary_types_allowed = True
 
 class ImmigrationState(TypedDict, total=False):
-    """Enhanced state class for immigration processing workflow with session support."""
+    """Enhanced state class for immigration processing workflow with session and language support."""
 
     # Core input
     text: str  # User's immigration question
     user_question: Optional[str]  # Processed question
     
-    # SESSION SUPPORT - NEW FIELDS
+    # SESSION SUPPORT
     session_id: Optional[str]  # Session identifier for conversation tracking
     conversation_history: Optional[List[ConversationTurn]]  # Previous Q&A pairs
     session_context: Optional[SessionContext]  # Summarized context from previous conversations
     is_followup_question: Optional[bool]  # Whether this refers to previous context
     conversation_turn_number: Optional[int]  # Which turn in the conversation this is
     
+    # LANGUAGE SUPPORT - NEW FIELDS
+    detected_language: Optional[str]  # "en", "es", "fr", "pt" - detected language code
+    language_name: Optional[str]  # "English", "Spanish", "French", "Portuguese"
+    language_confidence: Optional[float]  # Detection confidence score (0.0-1.0)
+    response_language: Optional[str]  # Language to respond in
+    language_supported: Optional[bool]  # Whether detected language is supported
+    detection_method: Optional[str]  # "langdetect", "pattern", "fallback"
+    language_info: Optional[Dict[str, Any]] 
     # Manager's strategic analysis
     manager_decision: Optional[str]  # Manager's full strategic analysis
     structured_analysis: Optional[Dict[str, Any]]  # Parsed strategic parameters

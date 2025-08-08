@@ -1,4 +1,5 @@
 #llm: gpt-4o-mini
+#llm: llama3-8b-8192
 llm: llama3-8b-8192
 
 vectordb:
@@ -6,10 +7,17 @@ vectordb:
   threshold: 0.6
   n_results: 3
 
+# NEW LANGUAGE SUPPORT CONFIGURATION
+language_support:
+  enabled: true
+  supported_languages: ["en", "es", "fr", "pt"]
+  default_language: "en"
+  detection_confidence_threshold: 0.6  # Minimum confidence for language detection
+  fallback_behavior: "english_with_explanation"  # How to handle detection failures
+
 memory_strategies:
   trimming_window_size: 4 # Number of messages to keep in trimming strategy (4 would be 2 pairs of Q/A)
   summarization_max_tokens: 800 # Max tokens before summarization kicks in
-
 
 reasoning_strategies:
   # Map each agent to a strategy code
