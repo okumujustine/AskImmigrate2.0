@@ -47,12 +47,10 @@ USER appuser
 # Expose port
 EXPOSE 8088
 
-# Optimized startup with resource limits
+# Optimized startup with resource limits for 8GB RAM/8vCPU server
 CMD ["uvicorn", "code.api:app", \
      "--host", "0.0.0.0", \
      "--port", "8088", \
      "--workers", "4", \
-     "--worker-class", "uvicorn.workers.UvicornWorker", \
-     "--max-requests", "1000", \
-     "--max-requests-jitter", "50", \
-     "--timeout-keep-alive", "5"]
+     "--timeout-keep-alive", "5", \
+     "--access-log"]
