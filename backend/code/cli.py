@@ -269,10 +269,10 @@ def main():
     # Main processing
     try:
         if args.agent:
-            # IMPROVED: Use session-aware multi-agent workflow with fixed session handling
+            # OPTIMIZED: Use fast workflow with automatic path selection
             correlation_id = start_request_tracking()
-            cli_logger.info("Starting session-aware agent workflow", extra={
-                "event": "agent_workflow_started",
+            cli_logger.info("Starting optimized agent workflow", extra={
+                "event": "optimized_workflow_started",
                 "question": args.question,
                 "session_id": session_id,
                 "correlation_id": correlation_id
@@ -285,8 +285,8 @@ def main():
                     "correlation_id": correlation_id
                 })
             
-            from backend.code.graph_workflow import run_agentic_askimmigrate
-            results = run_agentic_askimmigrate(text=args.question, session_id=session_id)
+            from backend.code.fast_workflow import run_optimized_workflow
+            results = run_optimized_workflow(text=args.question, session_id=session_id)
             
             # Display the synthesis response
             if "synthesis" in results:

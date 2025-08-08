@@ -1,7 +1,7 @@
 from typing import Dict, Any, Optional
 from backend.code.llm import get_llm
 from backend.code.paths import APP_CONFIG_FPATH, PROMPT_CONFIG_FPATH
-from backend.code.utils import load_config
+from backend.code.utils import load_yaml_config
 from backend.code.prompt_builder import build_prompt_from_config
 from backend.code.agentic_state import ImmigrationState
 from backend.code.tools.tool_registry import get_all_tools
@@ -15,8 +15,8 @@ from backend.code.retry_logic import (
 )
 import re
 
-config = load_config(APP_CONFIG_FPATH)
-prompt_config = load_config(PROMPT_CONFIG_FPATH)
+config = load_yaml_config(APP_CONFIG_FPATH)
+prompt_config = load_yaml_config(PROMPT_CONFIG_FPATH)
 
 def validate_and_sanitize_input(state: ImmigrationState) -> Dict[str, Any]:
     """

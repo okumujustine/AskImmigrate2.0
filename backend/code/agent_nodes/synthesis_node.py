@@ -3,12 +3,12 @@ from backend.code.prompt_builder import build_prompt_from_config
 from backend.code.agentic_state import ImmigrationState
 from backend.code.llm import get_llm
 from backend.code.paths import APP_CONFIG_FPATH, PROMPT_CONFIG_FPATH
-from backend.code.utils import load_config
+from backend.code.utils import load_yaml_config
 from backend.code.tools.tool_registry import get_tools_by_agent
 from backend.code.structured_logging import synthesis_logger, PerformanceTimer
 
-config = load_config(APP_CONFIG_FPATH)
-prompt_config = load_config(PROMPT_CONFIG_FPATH)
+config = load_yaml_config(APP_CONFIG_FPATH)
+prompt_config = load_yaml_config(PROMPT_CONFIG_FPATH)
 
 def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
     """

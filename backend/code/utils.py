@@ -2,6 +2,8 @@ import os
 import shutil
 import uuid
 import hashlib
+import time
+from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
 from typing import Iterator, Union, Optional
@@ -18,15 +20,115 @@ from backend.code.tools.radix_loader import build_kb, stream_nodes
 _RADIX_ROOT = build_kb(Path(DATA_DIR))
 
 
+class ChromaDBManager:
+    """Singleton ChromaDB connection manager to prevent redundant initializations."""
+    
+    _instance = None
+    _client = None
+    _collections = {}
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
+    def get_client(self, create_new_folder=False):
+        """Get or create ChromaDB client with singleton pattern."""
+        if self._client is None:
+            if os.path.exists(VECTOR_DB_DIR) and create_new_folder:
+                custom_terminal_print("Removing existing db")
+                shutil.rmtree(VECTOR_DB_DIR)
+            
+            os.makedirs(VECTOR_DB_DIR, exist_ok=True)
+            custom_terminal_print("Initializing chroma db")
+            self._client = chromadb.PersistentClient(path=VECTOR_DB_DIR)
+            custom_terminal_print("Chroma db successfully initialized")
+        
+        return self._client
+    
+    def get_collection(self, collection_name: str):
+        """Get or create collection with caching."""
+        if collection_name not in self._collections:
+            client = self.get_client()
+            custom_terminal_print(f"Retrieving {collection_name} collection instance")
+            self._collections[collection_name] = client.get_or_create_collection(name=collection_name)
+            custom_terminal_print(f"Retrieved {collection_name} collection instance")
+        
+        return self._collections[collection_name]
+
+
+# Global singleton instance
+_chroma_manager = ChromaDBManager()
+
+
+@contextmanager
+def performance_timer(operation_name: str):
+    """Context manager for timing operations."""
+    start = time.time()
+    try:
+        yield
+    finally:
+        duration = time.time() - start
+        print(f"PERF: {operation_name} took {duration:.3f}s")
+
+
+@lru_cache(maxsize=None)
+def load_yaml_config_cached(file_path: str) -> dict:
+    """Cached version of YAML config loading."""
+    file_path = Path(file_path)
+    
+    if not file_path.exists():
+        raise FileNotFoundError(f"YAML config file not found: {file_path}")
+    try:
+        with open(file_path, "r", encoding="utf-8") as file:
+            loaded_yaml = yaml.safe_load(file)
+            custom_terminal_print(f"Config loaded from {file_path}")
+            return loaded_yaml
+    except yaml.YAMLError as e:
+        raise yaml.YAMLError(f"Error parsing YAML file: {e}") from e
+    except IOError as e:
+        raise IOError(f"Error reading YAML file: {e}") from e
+
+
 @lru_cache
 def get_cpu_embedder():
-    """HuggingFace sentence-transformer forced onto CPU."""
+    """HuggingFace sentence-transformer forced onto CPU with pre-warming."""
     from langchain_huggingface import HuggingFaceEmbeddings
 
-    return HuggingFaceEmbeddings(
+    embedder = HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-mpnet-base-v2",
         model_kwargs={"device": "cpu"},
     )
+    
+    # Pre-warm the model with a dummy query to avoid first-call overhead
+    try:
+        embedder.embed_documents(["warm up embedding model"])
+    except Exception:
+        pass  # Ignore warming errors
+    
+    return embedder
+
+
+@lru_cache(maxsize=10000)
+def cached_embed_documents(text: str) -> tuple:
+    """
+    Cache individual document embeddings for reuse.
+    Returns tuple so it's hashable for caching.
+    """
+    model = get_cpu_embedder()
+    embedding = model.embed_documents([text])[0]
+    return tuple(embedding)
+
+
+def embed_documents_fast(documents: list[str]) -> list[list[float]]:
+    """
+    Fast embedding with individual document caching.
+    """
+    embeddings = []
+    for doc in documents:
+        cached_embedding = cached_embed_documents(doc)
+        embeddings.append(list(cached_embedding))
+    return embeddings
 
 
 def load_config(config_path: str = APP_CONFIG_FPATH):
@@ -134,22 +236,13 @@ def extract_client_from_session_id(session_id: str) -> Optional[str]:
 
 
 def initialize_chroma_db(create_new_folder=False):
-    custom_terminal_print("Initializing chroma db")
-    if os.path.exists(VECTOR_DB_DIR) and create_new_folder:
-        custom_terminal_print("Removing existing db")
-        shutil.rmtree(VECTOR_DB_DIR)
-
-    os.makedirs(VECTOR_DB_DIR, exist_ok=True)
-    chroma_instance = chromadb.PersistentClient(path=VECTOR_DB_DIR)
-    custom_terminal_print("Chroma db successfully initialized")
-    return chroma_instance
+    """Legacy function - now uses singleton ChromaDBManager."""
+    return _chroma_manager.get_client(create_new_folder)
 
 
 def get_collection(db_instance, collection_name: str) -> chromadb.Collection:
-    custom_terminal_print(f"Retrieving {collection_name} collection instance")
-    collection = db_instance.get_or_create_collection(name=collection_name)
-    custom_terminal_print(f"Retrieved {collection_name} collection instance")
-    return collection
+    """Legacy function - now uses singleton ChromaDBManager.""" 
+    return _chroma_manager.get_collection(collection_name)
 
 
 def chunk_publication(
@@ -188,26 +281,13 @@ def load_all_publications(publication_dir: str = DATA_DIR) -> list[str]:
 
 
 def load_yaml_config(file_path: Union[str, Path]) -> dict:
-    custom_terminal_print(f"Loading config from {file_path}")
-    file_path = Path(file_path)
-
-    if not file_path.exists():
-        raise FileNotFoundError(f"YAML config file not found: {file_path}")
-    try:
-        with open(file_path, "r", encoding="utf-8") as file:
-            loaded_yaml = yaml.safe_load(file)
-            custom_terminal_print(f"Config loaded from {file_path}")
-            return loaded_yaml
-    except yaml.YAMLError as e:
-        raise yaml.YAMLError(f"Error parsing YAML file: {e}") from e
-    except IOError as e:
-        raise IOError(f"Error reading YAML file: {e}") from e
+    """Load YAML config with caching for performance."""
+    return load_yaml_config_cached(str(file_path))
 
 
 def embed_documents(documents: list[str]) -> list[list[float]]:
-    # use cached CPU embedder
-    model = get_cpu_embedder()
-    return model.embed_documents(documents)
+    """Use fast cached embedding for better performance."""
+    return embed_documents_fast(documents)
 
 
 def get_relevant_documents(

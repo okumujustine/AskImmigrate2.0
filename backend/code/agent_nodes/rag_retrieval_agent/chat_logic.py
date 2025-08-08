@@ -5,7 +5,7 @@ from backend.code.agent_nodes.rag_retrieval_agent.config_loader import (
 from backend.code.agent_nodes.rag_retrieval_agent.chat_logger import setup_logging
 from backend.code.agent_nodes.rag_retrieval_agent.memory import make_memory
 from backend.code.tools.rag_prompt_utils import build_query_prompt
-from backend.code.utils import get_collection, get_relevant_documents, initialize_chroma_db
+from backend.code.utils import get_collection, get_relevant_documents, initialize_chroma_db, _chroma_manager
 from backend.code.llm import get_llm
 
 
@@ -19,9 +19,8 @@ def chat(session_id: str, question: str) -> str:
     prompt_cfg = load_prompt_config()
 
     mem = make_memory(str(session_id))
-    # Use existing utils functions for document retrieval
-    db_instance = initialize_chroma_db()
-    collection = get_collection(db_instance, collection_name="publications")
+    # Use singleton ChromaDB manager for better performance
+    collection = _chroma_manager.get_collection("publications")
     docs = get_relevant_documents(
         question,
         collection,
