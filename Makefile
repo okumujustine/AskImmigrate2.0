@@ -20,7 +20,9 @@ push:
 
 run:
 	@echo "→ Starting AskImmigrate services"
+	cp requirements.txt backend/
 	docker compose -f docker-compose.yml up -d
+	rm backend/requirements.txt
 
 stop:
 	@echo "→ Stopping AskImmigrate services"

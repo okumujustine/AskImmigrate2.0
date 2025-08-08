@@ -1,43 +1,58 @@
-# Stage 1: Builder
-FROM python:3.10-alpine AS builder
+FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install system dependencies for PyTorch + sentence-transformers
+# Install minimal system dependencies for ML workloads
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
     gcc \
-    git \
-    curl \
-    libopenblas-dev \
-    libomp-dev \
-    libstdc++6 \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Optional: use precompiled torch wheels to reduce build time
-ENV PIP_NO_CACHE_DIR=1
+# Set environment variables for optimization
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    WORKERS=4 \
+    MAX_WORKERS=8 \
+    TIMEOUT=60 \
+    TRANSFORMERS_CACHE=/app/cache \
+    SENTENCE_TRANSFORMERS_HOME=/app/cache
 
-# Create virtual environment and install Python dependencies
+# Install PyTorch CPU-only first (smaller)
+RUN pip install --no-cache-dir \
+    torch==2.1.2+cpu torchvision==0.16.2+cpu torchaudio==2.1.2+cpu \
+    --index-url https://download.pytorch.org/whl/cpu
+
+# Install other dependencies  
 COPY requirements.txt .
-RUN python -m venv /venv && \
-    /venv/bin/pip install --upgrade pip && \
-    /venv/bin/pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
-    /venv/bin/pip install -r requirements.txt
+RUN pip install --no-cache-dir --no-deps sentence-transformers>=2.5.1
+RUN grep -v "^torch\|^sentence-transformers\|^#\|^$" requirements.txt > requirements-filtered.txt && \
+    pip install --no-cache-dir -r requirements-filtered.txt
 
-# Stage 2: Runtime
-FROM python:3.10-alpine AS runtime
-
-WORKDIR /app
-
-# Copy virtualenv from builder
-COPY --from=builder /venv /venv
-
-# Use virtualenv as the Python environment
-ENV PATH="/venv/bin:$PATH"
+# Create cache directory for models
+RUN mkdir -p /app/cache
 
 # Copy app source
-COPY . ./backend
+COPY . .
 
-WORKDIR /app/backend
+# Pre-download the all-mpnet-base-v2 model during build
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-mpnet-base-v2')"
 
-CMD ["uvicorn", "code.api:app", "--host", "0.0.0.0", "--port", "8088"]
+# Create non-root user for security (Debian style)
+RUN adduser --disabled-password --gecos '' appuser && \
+    chown -R appuser:appuser /app
+USER appuser
+
+# Expose port
+EXPOSE 8088
+
+# Optimized startup with resource limits
+CMD ["uvicorn", "code.api:app", \
+     "--host", "0.0.0.0", \
+     "--port", "8088", \
+     "--workers", "4", \
+     "--worker-class", "uvicorn.workers.UvicornWorker", \
+     "--max-requests", "1000", \
+     "--max-requests-jitter", "50", \
+     "--timeout-keep-alive", "5"]
