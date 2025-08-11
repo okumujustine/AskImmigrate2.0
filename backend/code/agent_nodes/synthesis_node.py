@@ -13,17 +13,16 @@ prompt_config = load_yaml_config(PROMPT_CONFIG_FPATH)
 
 def detect_and_validate_language(user_question: str, conversation_history: list, session_id: str) -> Dict[str, Any]:
     """
-    CRITICAL FIX: Enhanced language detection that properly preserves session language preferences.
-    
-    This fixes the specific issue where follow-up questions incorrectly overwrite session language preferences.
+    CORRECTED: Library-first language detection using langdetect as primary method.
     """
     
     from backend.code.session_manager import session_manager
     
     synthesis_logger.info(
-        "language_detection_started_with_session_manager",
+        "language_detection_started_library_first",
         session_id=session_id,
         question_preview=user_question[:50],
+        question_length=len(user_question),
         has_conversation_history=bool(conversation_history)
     )
     
@@ -35,254 +34,178 @@ def detect_and_validate_language(user_question: str, conversation_history: list,
         "pt": "Portuguese"
     }
     
-    # CRITICAL FIX: Check for follow-up patterns FIRST before any language detection
-    is_likely_followup = False
-    followup_confidence = 0.0
-    
-    if conversation_history and len(conversation_history) > 0:
-        # Enhanced follow-up detection patterns
-        strong_followup_patterns = [
-            "how much", "cost", "fee", "price", "cuánto", "cuesto", "precio", "costo",
-            "what about", "and what", "can i also", "additionally", "también", "además",
-            "it", "that", "this", "ese", "eso", "este", "esta", "esa",
-            "more details", "tell me more", "más detalles", "más información",
-            "and", "y", "también", "also", "plus", "además"
-        ]
-        
-        question_lower = user_question.lower()
-        
-        # Check for strong follow-up indicators
-        followup_matches = [pattern for pattern in strong_followup_patterns if pattern in question_lower]
-        
-        if followup_matches:
-            is_likely_followup = True
-            followup_confidence = 0.95  # Very high confidence for strong patterns
-            synthesis_logger.info(
-                "strong_followup_patterns_detected",
-                session_id=session_id,
-                patterns_found=followup_matches,
-                confidence=followup_confidence
-            )
-        
-        # Also check for very short questions (often follow-ups)
-        elif len(user_question.split()) <= 4:
-            is_likely_followup = True
-            followup_confidence = 0.8  # High confidence for short questions
-            synthesis_logger.info(
-                "short_question_followup_detected",
-                session_id=session_id,
-                word_count=len(user_question.split()),
-                confidence=followup_confidence
-            )
-    
-    # STEP 1: Get session language preference
+    # STEP 1: Check for follow-up patterns (preserve session language)
     session_language = session_manager.get_session_language_preference(session_id)
     
-    synthesis_logger.info(
-        "session_language_preference_retrieved",
-        session_id=session_id,
-        session_language=session_language,
-        has_session_context=bool(session_language),
-        is_likely_followup=is_likely_followup,
-        followup_confidence=followup_confidence
-    )
-    
-    # CRITICAL FIX: If this is a follow-up and we have session language, ALWAYS USE IT
-    if is_likely_followup and session_language and session_language in SUPPORTED_LANGUAGES:
-        synthesis_logger.info(
-            "maintaining_session_language_for_followup",
-            session_id=session_id,
-            session_language=session_language,
-            question=user_question[:30],
-            followup_confidence=followup_confidence
-        )
-        
-        # DO NOT UPDATE SESSION PREFERENCE - just return the existing preference
-        return {
-            "language": session_language,
-            "language_name": SUPPORTED_LANGUAGES[session_language],
-            "confidence": followup_confidence,
-            "supported": True,
-            "detection_method": "session_context_followup",
-            "is_followup": True,
-            "preserve_session_language": True  # Flag to prevent updating
-        }
-    
-    # STEP 2: Detect current question language (only for new conversations or uncertain cases)
-    current_question_language = None
-    current_confidence = 0.0
-    detection_method = "unknown"
-    
-    # Check for obvious English patterns first
-    english_indicators = [
-        "what is", "how do", "can i", "do i need", "how much", "when can",
-        "where do", "which", "should i", "am i eligible", "tell me about",
-        "cost", "fee", "price", "apply", "application", "process", "requirements"
-    ]
-    
-    question_lower = user_question.lower()
-    if any(phrase in question_lower for phrase in english_indicators):
-        current_question_language = "en"
-        current_confidence = 0.9
-        detection_method = "pattern"
-        synthesis_logger.info(
-            "current_question_detected_english_patterns",
-            session_id=session_id,
-            method="pattern_matching",
-            indicators_found=[phrase for phrase in english_indicators if phrase in question_lower]
-        )
-    else:
-        # Use langdetect for current question
-        try:
-            with PerformanceTimer(synthesis_logger, "language_detection_langdetect", session_id=session_id):
-                detections = detect_langs(user_question)
-                
-                if not detections:
-                    raise LangDetectException("No language detected")
-                
-                top_detection = detections[0]
-                current_question_language = top_detection.lang
-                current_confidence = top_detection.prob
-                detection_method = "langdetect"
-                
-                synthesis_logger.info(
-                    "current_question_language_detected",
-                    session_id=session_id,
-                    detected_language=current_question_language,
-                    confidence=current_confidence,
-                    method="langdetect"
-                )
-                
-        except LangDetectException as e:
-            synthesis_logger.warning(
-                "current_question_detection_failed_langdetect",
-                session_id=session_id,
-                error_message=str(e),
-                question_length=len(user_question)
-            )
-            
-            # Fallback: Use session language or English
-            current_question_language = session_language or "en"
-            current_confidence = 0.6
-            detection_method = "fallback"
-    
-    # STEP 3: Determine final language with enhanced logic
-    final_language = "en"  # Default fallback
-    final_confidence = 0.5
-    final_method = "fallback"
-    decision_reason = "default"
-    should_update_session = False
-    
-    if session_language:
-        # Check if this is a follow-up question FIRST
-        followup_indicators = ["how much", "cost", "fee", "price", "what about", "and what", "also", "and"]
+    if conversation_history and session_language:
+        followup_patterns = ["how much", "cost", "fee", "price", "cuánto", "costo", "what about", "también"]
         question_lower = user_question.lower()
-        is_followup = any(indicator in question_lower for indicator in followup_indicators)
+        is_followup = any(pattern in question_lower for pattern in followup_patterns)
         
-        if is_followup and conversation_history:
+        if is_followup:
             synthesis_logger.info(
-                "preserving_session_language_for_followup",
+                "followup_detected_preserving_session_language",
                 session_id=session_id,
                 session_language=session_language,
                 question=user_question[:30]
             )
             
-            # PRESERVE session language - don't call session manager
-            final_language = session_language
-            final_confidence = 0.95
-            final_method = "followup_preservation" 
-            decision_reason = "followup_detected"
-            
-            # Skip updating session preference
-        else:
-            # Original logic for non-follow-up questions
-            should_maintain, determined_language = session_manager.should_maintain_session_language(
-                session_id, current_question_language or "en", current_confidence
-            )
-            
-            final_language = determined_language
-            should_update_session = True
-            
-            if should_maintain:
-                final_confidence = 0.9
-                final_method = "session_context"
-                decision_reason = "session_continuity"
-            else:
-                final_confidence = current_confidence if current_confidence > 0 else 0.8
-                final_method = detection_method
-                decision_reason = "language_switch"
-                
-                # Update session preference for language switch
-                if final_language in SUPPORTED_LANGUAGES and final_confidence > 0.7:
-                    session_manager.set_session_language_preference(
-                        session_id, final_language, final_confidence
-                    )
-                    synthesis_logger.info(
-                        "session_language_preference_updated",
-                        session_id=session_id,
-                        new_language=final_language,
-                        confidence=final_confidence
-                    )
-    else:
-        # No session context - use current detection for new session
-        final_language = current_question_language or "en"
-        final_confidence = current_confidence if current_question_language else 0.5
-        final_method = detection_method if current_question_language else "fallback"
-        decision_reason = "new_session"
-        should_update_session = True
+            return {
+                "language": session_language,
+                "language_name": SUPPORTED_LANGUAGES[session_language],
+                "confidence": 0.95,
+                "supported": True,
+                "detection_method": "session_followup",
+                "is_followup": True
+            }
+    
+    # STEP 2: USE LANGDETECT LIBRARY FIRST (PRIMARY METHOD)
+    detected_language = None
+    confidence = 0.0
+    detection_method = "unknown"
+    
+    try:
+        synthesis_logger.info(
+            "using_langdetect_library_primary",
+            session_id=session_id,
+            question_sample=user_question[:30]
+        )
         
-        # Set initial session language preference
-        if should_update_session and final_language in SUPPORTED_LANGUAGES and final_confidence > 0.7:
-            session_manager.set_session_language_preference(
-                session_id, final_language, final_confidence
-            )
-            synthesis_logger.info(
-                "session_language_preference_updated",
-                session_id=session_id,
-                new_language=final_language,
-                confidence=final_confidence
-            )
-    
-    # STEP 4: Update session preference only if appropriate
-    if should_update_session and final_language in SUPPORTED_LANGUAGES and final_confidence > 0.7:
-        session_manager.set_session_language_preference(
-            session_id, final_language, final_confidence
-        )
-        synthesis_logger.info(
-            "session_language_preference_updated",
+        with PerformanceTimer(synthesis_logger, "langdetect_primary_detection", session_id=session_id):
+            detections = detect_langs(user_question)
+            
+            if detections and len(detections) > 0:
+                top_detection = detections[0]
+                detected_language = top_detection.lang
+                confidence = top_detection.prob
+                detection_method = "langdetect_library"
+                
+                synthesis_logger.info(
+                    "langdetect_successful",
+                    session_id=session_id,
+                    detected_language=detected_language,
+                    confidence=confidence,
+                    all_detections=[(d.lang, round(d.prob, 3)) for d in detections[:3]]
+                )
+                
+                # If confidence is high and language is supported, use it immediately
+                if confidence > 0.8 and detected_language in SUPPORTED_LANGUAGES:
+                    synthesis_logger.info(
+                        "high_confidence_library_detection",
+                        session_id=session_id,
+                        detected_language=detected_language,
+                        confidence=confidence
+                    )
+                    
+                    # Update session preference
+                    session_manager.set_session_language_preference(session_id, detected_language, confidence)
+                    
+                    result = {
+                        "language": detected_language,
+                        "language_name": SUPPORTED_LANGUAGES[detected_language],
+                        "confidence": confidence,
+                        "supported": True,
+                        "detection_method": "langdetect_library",
+                        "library_detections": [(d.lang, d.prob) for d in detections[:3]]
+                    }
+                    
+                    synthesis_logger.info(
+                        "language_detection_completed_library_success",
+                        session_id=session_id,
+                        **result
+                    )
+                    
+                    return result
+            else:
+                raise LangDetectException("No detections returned")
+                
+    except LangDetectException as e:
+        synthesis_logger.warning(
+            "langdetect_library_failed",
             session_id=session_id,
-            new_language=final_language,
-            confidence=final_confidence,
-            reason=decision_reason
-        )
-    else:
-        synthesis_logger.info(
-            "session_language_preference_preserved",
-            session_id=session_id,
-            current_language=session_language,
-            final_language=final_language,
-            reason=decision_reason
+            error_message=str(e),
+            question_length=len(user_question),
+            falling_back_to_patterns=True
         )
     
-    # STEP 5: Prepare final result
-    is_supported = final_language in SUPPORTED_LANGUAGES
-    language_name = SUPPORTED_LANGUAGES.get(final_language, "Unknown/Unsupported")
+    # STEP 3: FALLBACK TO PATTERNS (only if library fails)
+    synthesis_logger.info(
+        "using_pattern_fallback",
+        session_id=session_id,
+        reason="langdetect_failed" if not detected_language else "low_confidence"
+    )
+    
+    question_lower = user_question.lower()
+    
+    # Spanish fallback patterns
+    spanish_indicators = ["¿", "ñ", "cuál", "cómo", "dónde", "cuándo", "cuánto", "costo", "es el", "es la"]
+    spanish_matches = [indicator for indicator in spanish_indicators if indicator in question_lower]
+    
+    if spanish_matches:
+        synthesis_logger.info(
+            "spanish_patterns_detected_fallback",
+            session_id=session_id,
+            spanish_matches=spanish_matches
+        )
+        
+        detected_language = "es"
+        confidence = 0.8
+        detection_method = "spanish_patterns_fallback"
+    
+    # English fallback patterns (very restrictive)
+    elif any(phrase in question_lower for phrase in ["what is", "how do", "can i", "do i need"]):
+        synthesis_logger.info(
+            "english_patterns_detected_fallback",
+            session_id=session_id
+        )
+        
+        detected_language = "en" 
+        confidence = 0.7
+        detection_method = "english_patterns_fallback"
+    
+    # French fallback patterns
+    elif any(phrase in question_lower for phrase in ["quel est", "comment", "où", "quand"]):
+        detected_language = "fr"
+        confidence = 0.7
+        detection_method = "french_patterns_fallback"
+    
+    # Portuguese fallback patterns  
+    elif any(phrase in question_lower for phrase in ["qual é", "como", "onde", "quando"]):
+        detected_language = "pt"
+        confidence = 0.7
+        detection_method = "portuguese_patterns_fallback"
+    
+    # STEP 4: Final fallback
+    if not detected_language:
+        synthesis_logger.warning(
+            "all_detection_methods_failed_using_default",
+            session_id=session_id,
+            question=user_question[:50]
+        )
+        
+        detected_language = session_language or "en"
+        confidence = 0.5
+        detection_method = "default_fallback"
+    
+    # STEP 5: Update session and return result
+    if detected_language in SUPPORTED_LANGUAGES and confidence > 0.6:
+        session_manager.set_session_language_preference(session_id, detected_language, confidence)
+    
+    is_supported = detected_language in SUPPORTED_LANGUAGES
+    language_name = SUPPORTED_LANGUAGES.get(detected_language, "Unknown")
     
     result = {
-        "language": final_language,
+        "language": detected_language,
         "language_name": language_name,
-        "confidence": final_confidence,
+        "confidence": confidence,
         "supported": is_supported,
-        "detection_method": final_method,
-        "is_followup": is_likely_followup,
-        "preserve_session_language": not should_update_session
+        "detection_method": detection_method
     }
     
     synthesis_logger.info(
-        "language_detection_completed_enhanced",
+        "language_detection_completed_with_method",
         session_id=session_id,
-        **result,
-        decision_reason=decision_reason
+        **result
     )
     
     return result
@@ -367,17 +290,65 @@ I detected that your question might be in **{language_name}**, but I cannot prov
 
     return response
 
+def test_language_detection(session_id="test"):
+    """Test function to verify language detection is working"""
+    test_questions = [
+        "¿Cuál es el costo de la visa EB-1?",  # Spanish
+        "What is the cost of EB1 visa?",       # English
+        "Quel est le coût du visa EB-1?",      # French
+        "Qual é o custo do visto EB-1?"        # Portuguese
+    ]
+    
+    synthesis_logger.info(
+        "language_detection_test_starting",
+        session_id=session_id,
+        test_questions_count=len(test_questions)
+    )
+    
+    for i, question in enumerate(test_questions):
+        try:
+            synthesis_logger.info(
+                f"testing_question_{i+1}",
+                session_id=session_id,
+                question=question,
+                question_length=len(question)
+            )
+            
+            # Test the language detection function directly
+            result = detect_and_validate_language(question, [], session_id)
+            
+            synthesis_logger.info(
+                f"test_result_{i+1}",
+                session_id=session_id,
+                question=question[:30],
+                detected_language=result.get("language", "unknown"),
+                confidence=result.get("confidence", 0),
+                supported=result.get("supported", False),
+                detection_method=result.get("detection_method", "unknown")
+            )
+            
+        except Exception as e:
+            synthesis_logger.error(
+                f"test_failed_{i+1}",
+                session_id=session_id,
+                question=question[:30],
+                error_type=type(e).__name__,
+                error_message=str(e)
+            )
+    
+    synthesis_logger.info(
+        "language_detection_test_completed",
+        session_id=session_id
+    )
+
 def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
     """
-    Enhanced Strategic Synthesis Agent that executes manager tool recommendations.
-    
-    STRATEGIC APPROACH:
-    - Reads manager's tool recommendations from analysis
-    - Executes recommended tools (web_search, fee_calculator) as needed
-    - Combines tool results with RAG context and conversation history
-    - Creates comprehensive responses based on strategic guidance
+    Enhanced Strategic Synthesis Agent with extensive logging for debugging.
     """
     
+    # TEMPORARY: Test language detection
+    test_language_detection(state.get("session_id", "debug"))
+
     if state.get("synthesis_approved", False):
         synthesis_logger.info("synthesis_already_approved", details="Synthesis already approved, skipping")
         return {}
@@ -391,9 +362,10 @@ def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
     manager_decision = state.get("manager_decision", "")
     
     synthesis_logger.info(
-        "synthesis_started",
+        "synthesis_started_with_debugging",
         session_id=session_id,
         question_length=len(user_question),
+        question_preview=user_question[:50],
         is_followup=is_followup,
         history_length=len(conversation_history),
         rag_context_length=len(rag_context),
@@ -401,6 +373,11 @@ def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
     )
     
     # Step 1: Parse manager's tool recommendations and execute recommended tools
+    synthesis_logger.info(
+        "step_1_starting_tool_execution",
+        session_id=session_id
+    )
+    
     tool_results = {}
     tools_used = []
     
@@ -409,20 +386,131 @@ def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
             manager_decision, user_question, session_id
         )
 
-    # Build comprehensive session context
+    synthesis_logger.info(
+        "step_1_completed_tool_execution",
+        session_id=session_id,
+        tools_executed=len(tools_used)
+    )
+
+    # Step 2: Build comprehensive session context
+    synthesis_logger.info(
+        "step_2_starting_session_context",
+        session_id=session_id
+    )
+    
     with PerformanceTimer(synthesis_logger, "session_context_building", session_id=session_id):
         session_context = build_session_context_for_llm(
             conversation_history, is_followup, session_id, user_question
         )
     
-    # Create dynamic prompt based on question type and context
+    synthesis_logger.info(
+        "step_2_completed_session_context",
+        session_id=session_id,
+        context_length=len(session_context)
+    )
+    
+    # Step 3: LANGUAGE DETECTION AND VALIDATION
+    synthesis_logger.info(
+        "step_3_starting_language_detection",
+        session_id=session_id,
+        user_question_for_detection=user_question
+    )
+    
+    language_info = None
+    try:
+        with PerformanceTimer(synthesis_logger, "language_detection", session_id=session_id):
+            synthesis_logger.info(
+                "calling_detect_and_validate_language",
+                session_id=session_id,
+                question_chars=len(user_question),
+                question_sample=user_question[:20]
+            )
+            
+            language_info = detect_and_validate_language(user_question, conversation_history, session_id)
+            
+            synthesis_logger.info(
+                "language_detection_result_received",
+                session_id=session_id,
+                language_info_keys=list(language_info.keys()) if language_info else [],
+                detected_language=language_info.get("language", "unknown") if language_info else "unknown",
+                confidence=language_info.get("confidence", 0) if language_info else 0,
+                supported=language_info.get("supported", False) if language_info else False
+            )
+        
+        # Handle unsupported languages
+        if language_info and not language_info.get("supported", True):
+            synthesis_logger.info(
+                "unsupported_language_detected_returning_early",
+                session_id=session_id,
+                detected_language=language_info.get("language"),
+                language_name=language_info.get("language_name")
+            )
+            
+            # Return early with language not supported response
+            unsupported_response = create_language_not_supported_response(
+                language_info.get("language", "unknown"),
+                language_info.get("language_name", "Unknown"),
+                user_question,
+                session_id
+            )
+            
+            return {
+                "synthesis": unsupported_response,
+                "tool_results": tool_results,
+                "tools_used": tools_used + ["language_detection"],
+                "question_processed": user_question,
+                "strategy_applied": workflow_parameters,
+                "synthesis_metadata": {
+                    "language_detected": language_info.get("language"),
+                    "language_supported": False,
+                    "response_type": "language_not_supported"
+                }
+            }
+        
+    except Exception as e:
+        synthesis_logger.error(
+            "language_detection_failed_with_exception",
+            session_id=session_id,
+            error_type=type(e).__name__,
+            error_message=str(e),
+            continuing_with_default="en"
+        )
+        # Continue with default English if language detection fails
+        language_info = {"language": "en", "confidence": 0.5, "supported": True}
+    
+    synthesis_logger.info(
+        "step_3_completed_language_detection",
+        session_id=session_id,
+        final_language=language_info.get("language", "unknown") if language_info else "unknown",
+        final_confidence=language_info.get("confidence", 0) if language_info else 0
+    )
+    
+    # Step 4: Create dynamic prompt based on question type and context
+    synthesis_logger.info(
+        "step_4_starting_prompt_creation",
+        session_id=session_id,
+        language_for_prompt=language_info.get("language", "unknown") if language_info else "unknown"
+    )
+    
     with PerformanceTimer(synthesis_logger, "prompt_creation", session_id=session_id):
         prompt = create_dynamic_synthesis_prompt(
             user_question, rag_context, session_context, workflow_parameters, 
-            manager_decision, tool_results
+            manager_decision, tool_results, language_info
         )
     
-    # Use LLM without tool calling to avoid errors
+    synthesis_logger.info(
+        "step_4_completed_prompt_creation",
+        session_id=session_id,
+        prompt_length=len(prompt),
+        prompt_preview=prompt[:100] + "..." if len(prompt) > 100 else prompt
+    )
+    
+    # Step 5: Use LLM without tool calling to avoid errors
+    synthesis_logger.info(
+        "step_5_starting_llm_generation",
+        session_id=session_id
+    )
+    
     try:
         llm = get_llm(config.get("llm", "gpt-4o-mini"))
         # CRITICAL: Don't bind tools to avoid the tool calling errors
@@ -431,15 +519,18 @@ def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
             synthesis_content = response.content
         
         synthesis_logger.info(
-            "llm_response_generated",
+            "step_5_llm_response_received",
             session_id=session_id,
-            response_length=len(synthesis_content)
+            response_length=len(synthesis_content),
+            detected_language=language_info.get("language", "unknown") if language_info else "unknown",
+            language_confidence=language_info.get("confidence", 0) if language_info else 0,
+            response_preview=synthesis_content[:100] + "..." if len(synthesis_content) > 100 else synthesis_content
         )
         
         # Validate response quality
         if not synthesis_content or len(synthesis_content.strip()) < 20:
             synthesis_logger.warning(
-                "llm_response_too_short",
+                "llm_response_too_short_using_fallback",
                 session_id=session_id,
                 response_length=len(synthesis_content.strip()) if synthesis_content else 0
             )
@@ -449,27 +540,30 @@ def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
         
     except Exception as e:
         synthesis_logger.error(
-            "llm_synthesis_failed",
+            "step_5_llm_generation_failed",
             session_id=session_id,
             error_type=type(e).__name__,
-            error_message=str(e)
+            error_message=str(e),
+            using_fallback=True
         )
         synthesis_content = create_fallback_response(
             user_question, conversation_history, is_followup, rag_context
         )
     
     synthesis_logger.info(
-        "synthesis_completed",
+        "synthesis_completed_successfully",
         session_id=session_id,
         final_response_length=len(synthesis_content),
-        tools_used_count=2,
-        strategy_applied=str(workflow_parameters.get("question_type", "unknown"))
+        tools_used_count=len(tools_used) + 1,  # +1 for language_detection
+        strategy_applied=str(workflow_parameters.get("question_type", "unknown")),
+        language_used=language_info.get("language", "unknown") if language_info else "unknown",
+        language_detection_successful=bool(language_info)
     )
     
     return {
         "synthesis": synthesis_content,
         "tool_results": tool_results,
-        "tools_used": tools_used + ["session_context", "llm_generation"],
+        "tools_used": tools_used + ["language_detection", "llm_generation"],
         "question_processed": user_question,
         "strategy_applied": workflow_parameters,
         "synthesis_metadata": {
@@ -478,6 +572,10 @@ def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
             "response_type": "strategic_synthesis",
             "manager_guided": bool(manager_decision),
             "tools_executed": len(tools_used),
+            "language_detected": language_info.get("language", "unknown") if language_info else "unknown",
+            "language_confidence": language_info.get("confidence", 0) if language_info else 0,
+            "language_supported": language_info.get("supported", True) if language_info else True,
+            "language_detection_worked": bool(language_info),
             "fallback_used": "LLM" not in str(type(synthesis_content))
         }
     }
@@ -643,48 +741,72 @@ def parse_tool_recommendations(manager_decision: str, user_question: str) -> lis
     
     return recommended_tools
 
-def create_dynamic_synthesis_prompt(user_question, rag_context, session_context, workflow_parameters, manager_decision="", tool_results=None):
-    """Create a dynamic prompt using the configured synthesis agent prompt with current information override."""
+def create_dynamic_synthesis_prompt(user_question, rag_context, session_context, workflow_parameters, manager_decision="", tool_results=None, language_info=None):
+    """Universal prompt creation that works for all languages automatically."""
     
-    # Get the proper synthesis agent prompt from configuration
+    # Get the universal synthesis agent prompt from configuration
     synthesis_prompt_config = prompt_config.get("synthesis_agent_prompt", {})
+    
+    # Use universal role and instruction
     role = synthesis_prompt_config.get("role", "You are an expert US Immigration Assistant.")
     instruction = synthesis_prompt_config.get("instruction", "Provide helpful immigration guidance.")
     
-    # Include tool results with emphasis on current information
+    # Detect language for logging purposes
+    detected_language = language_info.get("language", "unknown") if language_info else "unknown"
+    language_confidence = language_info.get("confidence", 0) if language_info else 0
+    
+    synthesis_logger.info(
+        "universal_prompt_creation",
+        detected_language=detected_language,
+        confidence=language_confidence,
+        user_question_preview=user_question[:30],
+        approach="universal_multilingual"
+    )
+    
+    # Get appropriate verification phrase for detected language
+    verification_phrases = synthesis_prompt_config.get("verification_phrases", {})
+    verification_note = verification_phrases.get(detected_language, verification_phrases.get("en", "Verify current information on uscis.gov"))
+    
+    # Include tool results (language-neutral)
     tool_results_text = ""
     current_info_available = False
     
     if tool_results:
         tool_results_text = "\n🔍 CURRENT INFORMATION SOURCES:\n"
+        
         for tool_name, result in tool_results.items():
             if isinstance(result, dict) and "error" in result:
                 tool_results_text += f"❌ {tool_name}: {result['error']}\n"
             elif tool_name == "web_search_tool":
                 current_info_available = True
-                tool_results_text += f"🌐 WEB SEARCH (CURRENT 2025 DATA): {str(result)[:500]}{'...' if len(str(result)) > 500 else ''}\n"
+                # Truncate to prevent verbose responses
+                result_preview = str(result)[:300] + "..." if len(str(result)) > 300 else str(result)
+                tool_results_text += f"🌐 WEB SEARCH (2025): {result_preview}\n"
+            elif tool_name == "fee_calculator_tool":
+                result_preview = str(result)[:200] + "..." if len(str(result)) > 200 else str(result)
+                tool_results_text += f"💰 FEE CALCULATOR: {result_preview}\n"
             else:
                 tool_results_text += f"📚 {tool_name}: {str(result)[:300]}{'...' if len(str(result)) > 300 else ''}\n"
     
-    # Add explicit current information override if web search results are available
+    # Add current information override if web search available
     current_info_override = ""
     if current_info_available:
-        current_info_override = f"""
+        current_info_override = """
 🚨 CRITICAL INSTRUCTION OVERRIDE:
 - You have access to CURRENT 2025 web search results above
 - NEVER mention knowledge cutoffs or outdated information disclaimers
 - Use the web search results as your PRIMARY source for current events/policies
 - Respond as if you have real-time access to 2025 information
-- Start your response with current information: "Based on current information from 2025..."
+- Start your response with current information based on the detected language
 
 """
     
     # Include manager guidance if available
     manager_guidance = ""
     if manager_decision:
-        manager_guidance = f"\n📋 STRATEGIC GUIDANCE FROM MANAGER:\n{manager_decision[:500]}{'...' if len(manager_decision) > 500 else ''}\n"
+        manager_guidance = f"\n📋 STRATEGIC GUIDANCE:\n{manager_decision[:500]}{'...' if len(manager_decision) > 500 else ''}\n"
 
-    # Construct the full prompt
+    # Construct the universal prompt
     full_prompt = f"""{role}
 
 {current_info_override}
@@ -696,13 +818,22 @@ def create_dynamic_synthesis_prompt(user_question, rag_context, session_context,
 {session_context}
 
 📚 IMMIGRATION KNOWLEDGE BASE:
-{rag_context if rag_context else "Use your general immigration knowledge for foundational information."}
+{rag_context[:300] + "..." if rag_context and len(rag_context) > 300 else rag_context or "Use your general immigration knowledge for foundational information."}
 
 {tool_results_text}
 
 {manager_guidance}
 
-Remember: If web search results are provided above, prioritize that current information over any older knowledge."""
+IMPORTANT: Follow the length guidelines and respond in the same language as the user's question.
+Final verification: {verification_note}"""
+    
+    synthesis_logger.info(
+        "universal_prompt_completed",
+        detected_language=detected_language,
+        prompt_length=len(full_prompt),
+        has_current_info=current_info_available,
+        verification_language=detected_language
+    )
     
     return full_prompt
 
