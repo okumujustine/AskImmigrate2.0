@@ -25,6 +25,8 @@ const cleanAnswer = (answer: string, question: string): string => {
     if (line.match(/^Your Question:/i) || 
         line.match(/^Question:/i) || 
         line.match(/^Q:/i) ||
+        line.match(/^Su Pregunta:/i) ||
+        line.match(/^Pregunta:/i) ||
         line.includes(question)) {
       startIndex = i + 1;
       continue;
@@ -46,12 +48,9 @@ const cleanAnswer = (answer: string, question: string): string => {
 
 export const askQuestion = async (
   question: string,
-  userId: string,
   chatSessionId?: string  // Only pass this if continuing existing session
 ): Promise<{ message: Message; sessionId: string }> => {
   const clientFingerprint = getPersistentBrowserFingerprint();
-
-  console.warn(userId)
   
   const requestBody: { 
     question: string; 
@@ -73,6 +72,10 @@ export const askQuestion = async (
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(requestBody),
   });
+
+  if (!response.ok) {
+      throw new Error('Failed to get response from API');
+    }
 
   const data = await response.json();
   

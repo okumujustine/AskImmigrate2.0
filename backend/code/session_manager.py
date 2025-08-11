@@ -279,6 +279,265 @@ class SessionManager:
                                 error_message=str(e))
             return []
     
+    def get_session_language_preference(self, session_id: str) -> Optional[str]:
+        """Get the preferred language for a session with enhanced debugging."""
+        session_id = self._sanitize_session_id(session_id)
+        
+        session_logger.info("get_session_language_preference_started", session_id=session_id)
+        
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                
+                # Check if session exists first
+                session_check = conn.execute(
+                    "SELECT session_id, session_context FROM sessions WHERE session_id = ?",
+                    (session_id,)
+                ).fetchone()
+                
+                if not session_check:
+                    session_logger.warning("Session not found in database", session_id=session_id)
+                    return None
+                
+                session_context_raw = session_check["session_context"]
+                session_logger.debug("Session context raw data", 
+                                    session_id=session_id, 
+                                    context_preview=str(session_context_raw)[:100])
+                
+                if session_context_raw:
+                    try:
+                        context_data = json.loads(session_context_raw)
+                        session_logger.debug("Session context parsed successfully", 
+                                            session_id=session_id,
+                                            context_keys=list(context_data.keys()))
+                        
+                        preferred_language = context_data.get("preferred_language")
+                        
+                        if preferred_language:
+                            session_logger.info(
+                                "session_language_preference_found_from_context",
+                                session_id=session_id,
+                                preferred_language=preferred_language,
+                                source="session_context"
+                            )
+                            return preferred_language
+                        else:
+                            session_logger.debug("No preferred_language key in context", 
+                                                session_id=session_id,
+                                                available_keys=list(context_data.keys()))
+                            
+                    except json.JSONDecodeError as e:
+                        session_logger.warning(
+                            "invalid_session_context_json_detailed",
+                            session_id=session_id,
+                            json_error=str(e),
+                            raw_context=str(session_context_raw)[:200]
+                        )
+                else:
+                    session_logger.debug("Session context is empty or null", session_id=session_id)
+                
+                # Fallback: analyze recent conversation turns for language patterns
+                session_logger.debug("Trying fallback language detection from conversation history", 
+                                    session_id=session_id)
+                
+                recent_turns = conn.execute("""
+                    SELECT answer FROM conversation_turns 
+                    WHERE session_id = ? 
+                    ORDER BY turn_number DESC 
+                    LIMIT 3
+                """, (session_id,)).fetchall()
+                
+                session_logger.debug("Found conversation turns for fallback", 
+                                    session_id=session_id, 
+                                    turn_count=len(recent_turns))
+                
+                if recent_turns:
+                    for i, turn in enumerate(recent_turns):
+                        answer = turn[0]
+                        
+                        # Look for language-specific verification phrases
+                        if "Vérifiez les informations actuelles sur uscis.gov" in answer:
+                            session_logger.info(
+                                "session_language_detected_from_history_french",
+                                session_id=session_id,
+                                detected_language="fr",
+                                source="conversation_analysis"
+                            )
+                            return "fr"
+                        elif "Verifica la información actual en uscis.gov" in answer:
+                            session_logger.info(
+                                "session_language_detected_from_history_spanish",
+                                session_id=session_id,
+                                detected_language="es",
+                                source="conversation_analysis"
+                            )
+                            return "es"
+                        elif "Verifique as informações atuais em uscis.gov" in answer:
+                            session_logger.info(
+                                "session_language_detected_from_history_portuguese",
+                                session_id=session_id,
+                                detected_language="pt",
+                                source="conversation_analysis"
+                            )
+                            return "pt"
+                
+                session_logger.info(
+                    "no_session_language_preference_found_final",
+                    session_id=session_id
+                )
+                return None
+                
+        except Exception as e:
+            session_logger.error(
+                "error_getting_session_language_preference_detailed",
+                session_id=session_id,
+                error_message=str(e),
+                error_type=type(e).__name__
+            )
+            return None
+
+    def set_session_language_preference(self, session_id: str, language_code: str, confidence: float = 1.0) -> None:
+        """Set or update the language preference for a session."""
+        session_id = self._sanitize_session_id(session_id)
+        
+        session_logger.info("set_session_language_preference_started", 
+                          session_id=session_id,
+                          language_code=language_code,
+                          confidence=confidence)
+        
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                # Ensure session exists first
+                self.get_or_create_session(session_id)
+                
+                # Get current context
+                current_context = conn.execute(
+                    "SELECT session_context FROM sessions WHERE session_id = ?",
+                    (session_id,)
+                ).fetchone()
+                
+                context_data = {}
+                if current_context and current_context[0]:
+                    try:
+                        context_data = json.loads(current_context[0])
+                        session_logger.debug("Existing context loaded", 
+                                           session_id=session_id,
+                                           existing_keys=list(context_data.keys()))
+                    except json.JSONDecodeError:
+                        session_logger.warning("Invalid JSON in existing session context", session_id=session_id)
+                        context_data = {}
+                
+                # Update language preference
+                context_data["preferred_language"] = language_code
+                context_data["language_confidence"] = confidence
+                context_data["language_last_updated"] = datetime.now().isoformat()
+                
+                session_logger.debug("Updated context data", 
+                                    session_id=session_id,
+                                    context_keys=list(context_data.keys()),
+                                    preferred_language=context_data.get("preferred_language"))
+                
+                # Update database
+                rows_updated = conn.execute(
+                    "UPDATE sessions SET session_context = ?, updated_at = ? WHERE session_id = ?",
+                    (json.dumps(context_data), datetime.now().isoformat(), session_id)
+                ).rowcount
+                
+                if rows_updated == 0:
+                    session_logger.error("Failed to update session context - no rows affected", 
+                                       session_id=session_id)
+                    return
+                
+                # Verification: Check if the update worked
+                verify_context = conn.execute(
+                    "SELECT session_context FROM sessions WHERE session_id = ?",
+                    (session_id,)
+                ).fetchone()
+                
+                if verify_context and verify_context[0]:
+                    try:
+                        verify_data = json.loads(verify_context[0])
+                        stored_language = verify_data.get("preferred_language")
+                        if stored_language == language_code:
+                            session_logger.info(
+                                "session_language_preference_updated_verified",
+                                session_id=session_id,
+                                language_code=language_code,
+                                confidence=confidence
+                            )
+                        else:
+                            session_logger.error(
+                                "session_language_preference_verification_failed",
+                                session_id=session_id,
+                                expected=language_code,
+                                actual=stored_language
+                            )
+                    except json.JSONDecodeError:
+                        session_logger.error("Verification failed - invalid JSON after update", 
+                                           session_id=session_id)
+                
+        except Exception as e:
+            session_logger.error(
+                "error_setting_session_language_preference",
+                session_id=session_id,
+                language_code=language_code,
+                error_message=str(e)
+            )
+
+    def should_maintain_session_language(self, session_id: str, new_detected_language: str, 
+                                       new_confidence: float) -> tuple:
+        """Determine if we should maintain session language or switch to newly detected language."""
+        session_id = self._sanitize_session_id(session_id)
+        
+        session_logger.info("should_maintain_session_language_started",
+                          session_id=session_id,
+                          new_detected_language=new_detected_language,
+                          new_confidence=new_confidence)
+        
+        # Get current session language preference
+        session_language = self.get_session_language_preference(session_id)
+        
+        if not session_language:
+            # No session preference - use new detection
+            session_logger.info(
+                "no_session_language_using_new_detection",
+                session_id=session_id,
+                new_language=new_detected_language,
+                confidence=new_confidence
+            )
+            return False, new_detected_language
+        
+        # We have a session language preference
+        if session_language == new_detected_language:
+            # Same language - maintain
+            session_logger.info(
+                "same_language_maintaining_session",
+                session_id=session_id,
+                session_language=session_language
+            )
+            return True, session_language
+        
+        # Different language detected
+        if new_confidence > 0.85:  # High confidence threshold for language switching
+            session_logger.info(
+                "high_confidence_language_switch",
+                session_id=session_id,
+                from_language=session_language,
+                to_language=new_detected_language,
+                confidence=new_confidence
+            )
+            return False, new_detected_language
+        else:
+            # Low confidence - maintain session language
+            session_logger.info(
+                "low_confidence_maintaining_session_language",
+                session_id=session_id,
+                session_language=session_language,
+                new_detected=new_detected_language,
+                confidence=new_confidence
+            )
+            return True, session_language
+        
     def save_conversation_turn(self, session_id: str, turn: ConversationTurn, 
                              final_state: ImmigrationState) -> None:
         """
