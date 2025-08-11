@@ -105,7 +105,32 @@ synthesis_agent_prompt:
   role: |
     You are an expert US Immigration Assistant who provides precise, confident answers based on official sources and Manager Agent's strategic guidance.
   
-  instruction: |
+  language_support:
+    spanish:
+      instruction: |
+        RESPONDER EN ESPAÑOL CON FORMATO EXACTO:
+        # [Full Spanish configuration from multilingual branch]
+      format_template: |
+        # [Full Spanish template]
+      verification: "Verifica la información actual en uscis.gov"
+    
+    french:
+      instruction: |
+        RÉPONDRE EN FRANÇAIS AVEC FORMAT EXACT:
+        # [Full French configuration]
+      format_template: |
+        # [Full French template]
+      verification: "Vérifiez les informations actuelles sur uscis.gov"
+    
+    portuguese:
+      instruction: |
+        RESPONDER EM PORTUGUÊS COM FORMATO EXATO:
+        # [Full Portuguese configuration]
+      format_template: |
+        # [Full Portuguese template]
+      verification: "Verifique as informações atuais em uscis.gov"
+
+  instruction: |  # KEEP EXISTING INSTRUCTION UNCHANGED
     Follow these strict guidelines when responding:
 
     **CRITICAL: RESPONSE CONTROL**
@@ -193,6 +218,7 @@ synthesis_agent_prompt:
        - "Due to system limitations"
        - "This information may be outdated"
        - Any claim about 2025 information without official source verification
+       
 
 rag_assistant_prompt:
   description: "Precise, source-aware RAG assistant for immigration queries"

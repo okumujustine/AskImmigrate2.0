@@ -7,6 +7,8 @@ import { LoadingMessage } from "./components/LoadingMessage";
 import { SessionStatus } from "./components/SessionStatus";
 import { askQuestion, getChatSessions } from "./services/api";
 import { getPersistentBrowserFingerprint } from "./services/browserFingerprint";
+import multilingualService from "./services/multilingualService";
+import { LanguageSelector } from "./components/LanguageSelector";
 import type { ChatSession, User } from "./types/chat";
 
 // Import debug functions to make them available
@@ -18,6 +20,16 @@ function App() {
     const clientId = getPersistentBrowserFingerprint();
     return { id: clientId, name: "User" };
   });
+
+  // Language state
+  const [currentLanguage, setCurrentLanguage] = useState<string>(() =>
+    multilingualService.getCurrentLanguage()
+  );
+  const uiStrings = multilingualService.getUIStrings(currentLanguage);
+  const exampleQuestions =
+    multilingualService.getExampleQuestions(currentLanguage);
+
+  // Chat state
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [currentSession, setCurrentSession] = useState<ChatSession | null>(
     null
@@ -33,6 +45,13 @@ function App() {
   useEffect(() => {
     scrollToBottom();
   }, [currentSession?.messages]);
+
+  // Handle language changes
+  const handleLanguageChange = (languageCode: string) => {
+    console.log("Changing UI language to:", languageCode);
+    multilingualService.setLanguage(languageCode);
+    setCurrentLanguage(languageCode);
+  };
 
   const loadChatSessions = useCallback(async () => {
     try {
@@ -74,7 +93,6 @@ function App() {
       // CHANGE: Don't create session upfront, let backend handle it
       const { message, sessionId } = await askQuestion(
         question,
-        user.id,
         currentSession?.id
       );
 
@@ -119,6 +137,13 @@ function App() {
         currentSessionId={currentSession?.id || null}
         onSessionSelect={handleSessionSelect}
         onNewChat={handleNewChat}
+        uiStrings={uiStrings}
+        languageSelector={
+          <LanguageSelector
+            currentLanguage={currentLanguage}
+            onLanguageChange={handleLanguageChange}
+          />
+        }
       />
 
       <main className="chat-main">
@@ -129,6 +154,7 @@ function App() {
               : false
           }
           sessionId={currentSession?.id}
+          uiStrings={uiStrings}
         />
 
         <div className="chat-container">
@@ -137,22 +163,29 @@ function App() {
               {currentSession.messages.map((message) => (
                 <ChatMessage key={message.id} message={message} />
               ))}
-              {isLoading && <LoadingMessage />}
+              {isLoading && <LoadingMessage uiStrings={uiStrings} />}
               <div ref={messagesEndRef} />
             </div>
           ) : (
             <div className="empty-state">
-              <h1>Welcome to AskImmigrate</h1>
-              <p>
-                Ask any question about immigration and get detailed answers.
-              </p>
+              <h1>{uiStrings.welcome}</h1>
+              <p>{uiStrings.welcomeDescription}</p>
               <div className="example-questions">
-                <h3>Example questions:</h3>
+                <h3>{uiStrings.exampleQuestions}</h3>
                 <ul>
-                  <li>"What is an F1 visa?"</li>
-                  <li>"How to apply for a Green Card?"</li>
-                  <li>"What documents do I need for H1B?"</li>
+                  {exampleQuestions.map((question, index) => (
+                    <li key={index}>{question}</li>
+                  ))}
                 </ul>
+              </div>
+
+              <div className="language-features">
+                <p className="language-note">
+                  🌍 {uiStrings.questionLanguageNote}
+                </p>
+                <p className="ui-language-note">
+                  💡 {uiStrings.uiLanguageNote}
+                </p>
               </div>
             </div>
           )}
@@ -168,6 +201,7 @@ function App() {
               ? !currentSession.id.startsWith("new-session-")
               : false
           }
+          uiStrings={uiStrings}
         />
       </main>
     </div>

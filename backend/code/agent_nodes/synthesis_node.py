@@ -6,9 +6,366 @@ from backend.code.paths import APP_CONFIG_FPATH, PROMPT_CONFIG_FPATH
 from backend.code.utils import load_yaml_config
 from backend.code.tools.tool_registry import get_tools_by_agent
 from backend.code.structured_logging import synthesis_logger, PerformanceTimer
-
+from langdetect import detect, detect_langs
+from langdetect.lang_detect_exception import LangDetectException
 config = load_yaml_config(APP_CONFIG_FPATH)
 prompt_config = load_yaml_config(PROMPT_CONFIG_FPATH)
+
+def detect_and_validate_language(user_question: str, conversation_history: list, session_id: str) -> Dict[str, Any]:
+    """
+    CRITICAL FIX: Enhanced language detection that properly preserves session language preferences.
+    
+    This fixes the specific issue where follow-up questions incorrectly overwrite session language preferences.
+    """
+    
+    from backend.code.session_manager import session_manager
+    
+    synthesis_logger.info(
+        "language_detection_started_with_session_manager",
+        session_id=session_id,
+        question_preview=user_question[:50],
+        has_conversation_history=bool(conversation_history)
+    )
+    
+    # Supported languages
+    SUPPORTED_LANGUAGES = {
+        "en": "English",
+        "es": "Spanish", 
+        "fr": "French",
+        "pt": "Portuguese"
+    }
+    
+    # CRITICAL FIX: Check for follow-up patterns FIRST before any language detection
+    is_likely_followup = False
+    followup_confidence = 0.0
+    
+    if conversation_history and len(conversation_history) > 0:
+        # Enhanced follow-up detection patterns
+        strong_followup_patterns = [
+            "how much", "cost", "fee", "price", "cuánto", "cuesto", "precio", "costo",
+            "what about", "and what", "can i also", "additionally", "también", "además",
+            "it", "that", "this", "ese", "eso", "este", "esta", "esa",
+            "more details", "tell me more", "más detalles", "más información",
+            "and", "y", "también", "also", "plus", "además"
+        ]
+        
+        question_lower = user_question.lower()
+        
+        # Check for strong follow-up indicators
+        followup_matches = [pattern for pattern in strong_followup_patterns if pattern in question_lower]
+        
+        if followup_matches:
+            is_likely_followup = True
+            followup_confidence = 0.95  # Very high confidence for strong patterns
+            synthesis_logger.info(
+                "strong_followup_patterns_detected",
+                session_id=session_id,
+                patterns_found=followup_matches,
+                confidence=followup_confidence
+            )
+        
+        # Also check for very short questions (often follow-ups)
+        elif len(user_question.split()) <= 4:
+            is_likely_followup = True
+            followup_confidence = 0.8  # High confidence for short questions
+            synthesis_logger.info(
+                "short_question_followup_detected",
+                session_id=session_id,
+                word_count=len(user_question.split()),
+                confidence=followup_confidence
+            )
+    
+    # STEP 1: Get session language preference
+    session_language = session_manager.get_session_language_preference(session_id)
+    
+    synthesis_logger.info(
+        "session_language_preference_retrieved",
+        session_id=session_id,
+        session_language=session_language,
+        has_session_context=bool(session_language),
+        is_likely_followup=is_likely_followup,
+        followup_confidence=followup_confidence
+    )
+    
+    # CRITICAL FIX: If this is a follow-up and we have session language, ALWAYS USE IT
+    if is_likely_followup and session_language and session_language in SUPPORTED_LANGUAGES:
+        synthesis_logger.info(
+            "maintaining_session_language_for_followup",
+            session_id=session_id,
+            session_language=session_language,
+            question=user_question[:30],
+            followup_confidence=followup_confidence
+        )
+        
+        # DO NOT UPDATE SESSION PREFERENCE - just return the existing preference
+        return {
+            "language": session_language,
+            "language_name": SUPPORTED_LANGUAGES[session_language],
+            "confidence": followup_confidence,
+            "supported": True,
+            "detection_method": "session_context_followup",
+            "is_followup": True,
+            "preserve_session_language": True  # Flag to prevent updating
+        }
+    
+    # STEP 2: Detect current question language (only for new conversations or uncertain cases)
+    current_question_language = None
+    current_confidence = 0.0
+    detection_method = "unknown"
+    
+    # Check for obvious English patterns first
+    english_indicators = [
+        "what is", "how do", "can i", "do i need", "how much", "when can",
+        "where do", "which", "should i", "am i eligible", "tell me about",
+        "cost", "fee", "price", "apply", "application", "process", "requirements"
+    ]
+    
+    question_lower = user_question.lower()
+    if any(phrase in question_lower for phrase in english_indicators):
+        current_question_language = "en"
+        current_confidence = 0.9
+        detection_method = "pattern"
+        synthesis_logger.info(
+            "current_question_detected_english_patterns",
+            session_id=session_id,
+            method="pattern_matching",
+            indicators_found=[phrase for phrase in english_indicators if phrase in question_lower]
+        )
+    else:
+        # Use langdetect for current question
+        try:
+            with PerformanceTimer(synthesis_logger, "language_detection_langdetect", session_id=session_id):
+                detections = detect_langs(user_question)
+                
+                if not detections:
+                    raise LangDetectException("No language detected")
+                
+                top_detection = detections[0]
+                current_question_language = top_detection.lang
+                current_confidence = top_detection.prob
+                detection_method = "langdetect"
+                
+                synthesis_logger.info(
+                    "current_question_language_detected",
+                    session_id=session_id,
+                    detected_language=current_question_language,
+                    confidence=current_confidence,
+                    method="langdetect"
+                )
+                
+        except LangDetectException as e:
+            synthesis_logger.warning(
+                "current_question_detection_failed_langdetect",
+                session_id=session_id,
+                error_message=str(e),
+                question_length=len(user_question)
+            )
+            
+            # Fallback: Use session language or English
+            current_question_language = session_language or "en"
+            current_confidence = 0.6
+            detection_method = "fallback"
+    
+    # STEP 3: Determine final language with enhanced logic
+    final_language = "en"  # Default fallback
+    final_confidence = 0.5
+    final_method = "fallback"
+    decision_reason = "default"
+    should_update_session = False
+    
+    if session_language:
+        # Check if this is a follow-up question FIRST
+        followup_indicators = ["how much", "cost", "fee", "price", "what about", "and what", "also", "and"]
+        question_lower = user_question.lower()
+        is_followup = any(indicator in question_lower for indicator in followup_indicators)
+        
+        if is_followup and conversation_history:
+            synthesis_logger.info(
+                "preserving_session_language_for_followup",
+                session_id=session_id,
+                session_language=session_language,
+                question=user_question[:30]
+            )
+            
+            # PRESERVE session language - don't call session manager
+            final_language = session_language
+            final_confidence = 0.95
+            final_method = "followup_preservation" 
+            decision_reason = "followup_detected"
+            
+            # Skip updating session preference
+        else:
+            # Original logic for non-follow-up questions
+            should_maintain, determined_language = session_manager.should_maintain_session_language(
+                session_id, current_question_language or "en", current_confidence
+            )
+            
+            final_language = determined_language
+            should_update_session = True
+            
+            if should_maintain:
+                final_confidence = 0.9
+                final_method = "session_context"
+                decision_reason = "session_continuity"
+            else:
+                final_confidence = current_confidence if current_confidence > 0 else 0.8
+                final_method = detection_method
+                decision_reason = "language_switch"
+                
+                # Update session preference for language switch
+                if final_language in SUPPORTED_LANGUAGES and final_confidence > 0.7:
+                    session_manager.set_session_language_preference(
+                        session_id, final_language, final_confidence
+                    )
+                    synthesis_logger.info(
+                        "session_language_preference_updated",
+                        session_id=session_id,
+                        new_language=final_language,
+                        confidence=final_confidence
+                    )
+    else:
+        # No session context - use current detection for new session
+        final_language = current_question_language or "en"
+        final_confidence = current_confidence if current_question_language else 0.5
+        final_method = detection_method if current_question_language else "fallback"
+        decision_reason = "new_session"
+        should_update_session = True
+        
+        # Set initial session language preference
+        if should_update_session and final_language in SUPPORTED_LANGUAGES and final_confidence > 0.7:
+            session_manager.set_session_language_preference(
+                session_id, final_language, final_confidence
+            )
+            synthesis_logger.info(
+                "session_language_preference_updated",
+                session_id=session_id,
+                new_language=final_language,
+                confidence=final_confidence
+            )
+    
+    # STEP 4: Update session preference only if appropriate
+    if should_update_session and final_language in SUPPORTED_LANGUAGES and final_confidence > 0.7:
+        session_manager.set_session_language_preference(
+            session_id, final_language, final_confidence
+        )
+        synthesis_logger.info(
+            "session_language_preference_updated",
+            session_id=session_id,
+            new_language=final_language,
+            confidence=final_confidence,
+            reason=decision_reason
+        )
+    else:
+        synthesis_logger.info(
+            "session_language_preference_preserved",
+            session_id=session_id,
+            current_language=session_language,
+            final_language=final_language,
+            reason=decision_reason
+        )
+    
+    # STEP 5: Prepare final result
+    is_supported = final_language in SUPPORTED_LANGUAGES
+    language_name = SUPPORTED_LANGUAGES.get(final_language, "Unknown/Unsupported")
+    
+    result = {
+        "language": final_language,
+        "language_name": language_name,
+        "confidence": final_confidence,
+        "supported": is_supported,
+        "detection_method": final_method,
+        "is_followup": is_likely_followup,
+        "preserve_session_language": not should_update_session
+    }
+    
+    synthesis_logger.info(
+        "language_detection_completed_enhanced",
+        session_id=session_id,
+        **result,
+        decision_reason=decision_reason
+    )
+    
+    return result
+
+def create_language_not_supported_response(detected_language: str, language_name: str, user_question: str, session_id: str) -> str:
+    """Create a polite response for unsupported languages, encouraging English use."""
+    
+    synthesis_logger.info(
+        "creating_unsupported_language_response",
+        session_id=session_id,
+        detected_language=detected_language,
+        language_name=language_name
+    )
+    
+    # Basic responses in common unsupported languages
+    unsupported_responses = {
+        "de": {
+            "title": "# Sprache nicht unterstützt / Language Not Supported",
+            "message": "Entschuldigung, ich kann nur auf Englisch, Spanisch, Französisch und Portugiesisch antworten.",
+            "request": "**Bitte stellen Sie Ihre Frage auf Englisch.**"
+        },
+        "it": {
+            "title": "# Lingua non supportata / Language Not Supported", 
+            "message": "Mi dispiace, posso rispondere solo in inglese, spagnolo, francese e portoghese.",
+            "request": "**Si prega di fare la domanda in inglese.**"
+        },
+        "zh": {
+            "title": "# 不支持的语言 / Language Not Supported",
+            "message": "抱歉，我只能用英语、西班牙语、法语和葡萄牙语回答。",
+            "request": "**请用英语提问。**"
+        },
+        "ar": {
+            "title": "# اللغة غير مدعومة / Language Not Supported",
+            "message": "آسف، يمكنني الإجابة فقط باللغة الإنجليزية أو الإسبانية أو الفرنسية أو البرتغالية.",
+            "request": "**يرجى طرح سؤالك باللغة الإنجليزية.**"
+        }
+    }
+    
+    # Get language-specific response or use generic English
+    if detected_language in unsupported_responses:
+        lang_response = unsupported_responses[detected_language]
+        response = f"""{lang_response['title']}
+
+{lang_response['message']}
+
+{lang_response['request']}
+
+---
+
+**Sorry, I can only respond in English, Spanish, French, and Portuguese.**
+
+Please ask your question in English so I can provide you with accurate US immigration information.
+
+## Supported Languages / Idiomas Soportados
+- 🇺🇸 **English** - Full support
+- 🇪🇸 **Español** - Soporte completo  
+- 🇫🇷 **Français** - Support complet
+- 🇧🇷 **Português** - Suporte completo
+
+## Official Resources
+- **USCIS Website**: https://www.uscis.gov
+- **Contact USCIS**: https://www.uscis.gov/contactcenter"""
+    else:
+        # Generic response for unknown languages
+        response = f"""# Language Not Supported
+
+**Sorry, I can only respond in English, Spanish, French, and Portuguese.**
+
+I detected that your question might be in **{language_name}**, but I cannot provide accurate immigration information in this language.
+
+**Please ask your question in English** so I can provide you with precise US immigration guidance.
+
+## Supported Languages / Idiomas Soportados
+- 🇺🇸 **English** - Full support
+- 🇪🇸 **Español** - Soporte completo  
+- 🇫🇷 **Français** - Support complet
+- 🇧🇷 **Português** - Suporte completo
+
+## Official Resources
+- **USCIS Website**: https://www.uscis.gov
+- **Contact USCIS**: https://www.uscis.gov/contactcenter"""
+
+    return response
 
 def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
     """
