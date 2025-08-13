@@ -6,27 +6,35 @@ from backend.code.paths import APP_CONFIG_FPATH, PROMPT_CONFIG_FPATH
 from backend.code.utils import load_yaml_config
 from backend.code.tools.tool_registry import get_tools_by_agent
 from backend.code.structured_logging import synthesis_logger, PerformanceTimer
-from langdetect import detect, detect_langs
-from langdetect.lang_detect_exception import LangDetectException
+from fast_langdetect import detect
 config = load_yaml_config(APP_CONFIG_FPATH)
 prompt_config = load_yaml_config(PROMPT_CONFIG_FPATH)
 
+
 def detect_and_validate_language(user_question: str, conversation_history: list, session_id: str) -> Dict[str, Any]:
     """
-    CORRECTED: Library-first language detection using langdetect as primary method.
+    FastText-based language detection with strict support for 4 languages only.
+    
+    Args:
+        user_question: The user's question text
+        conversation_history: List of previous conversation turns
+        session_id: Session identifier
+        
+    Returns:
+        Dict with language info including 'supported' boolean
     """
     
     from backend.code.session_manager import session_manager
+    from fast_langdetect import detect, detect_multilingual
     
     synthesis_logger.info(
-        "language_detection_started_library_first",
+        "language_detection_started",
         session_id=session_id,
-        question_preview=user_question[:50],
         question_length=len(user_question),
         has_conversation_history=bool(conversation_history)
     )
     
-    # Supported languages
+    # ONLY support these 4 languages
     SUPPORTED_LANGUAGES = {
         "en": "English",
         "es": "Spanish", 
@@ -37,17 +45,16 @@ def detect_and_validate_language(user_question: str, conversation_history: list,
     # STEP 1: Check for follow-up patterns (preserve session language)
     session_language = session_manager.get_session_language_preference(session_id)
     
-    if conversation_history and session_language:
+    if conversation_history and session_language and session_language in SUPPORTED_LANGUAGES:
         followup_patterns = ["how much", "cost", "fee", "price", "cuánto", "costo", "what about", "también"]
         question_lower = user_question.lower()
         is_followup = any(pattern in question_lower for pattern in followup_patterns)
         
         if is_followup:
             synthesis_logger.info(
-                "followup_detected_preserving_session_language",
+                "followup_detected_using_session_language",
                 session_id=session_id,
-                session_language=session_language,
-                question=user_question[:30]
+                session_language=session_language
             )
             
             return {
@@ -59,156 +66,101 @@ def detect_and_validate_language(user_question: str, conversation_history: list,
                 "is_followup": True
             }
     
-    # STEP 2: USE LANGDETECT LIBRARY FIRST (PRIMARY METHOD)
+    # STEP 2: Use FastText for detection
     detected_language = None
     confidence = 0.0
     detection_method = "unknown"
     
     try:
-        synthesis_logger.info(
-            "using_langdetect_library_primary",
-            session_id=session_id,
-            question_sample=user_question[:30]
-        )
-        
-        with PerformanceTimer(synthesis_logger, "langdetect_primary_detection", session_id=session_id):
-            detections = detect_langs(user_question)
+        with PerformanceTimer(synthesis_logger, "fasttext_detection", session_id=session_id):
+            # FastText detection
+            result = detect(user_question)
+            detected_language = result['lang']
+            confidence = result['score']
+            detection_method = "fasttext"
             
-            if detections and len(detections) > 0:
-                top_detection = detections[0]
-                detected_language = top_detection.lang
-                confidence = top_detection.prob
-                detection_method = "langdetect_library"
+            synthesis_logger.info(
+                "fasttext_detection_successful",
+                session_id=session_id,
+                detected_language=detected_language,
+                confidence=confidence
+            )
                 
-                synthesis_logger.info(
-                    "langdetect_successful",
-                    session_id=session_id,
-                    detected_language=detected_language,
-                    confidence=confidence,
-                    all_detections=[(d.lang, round(d.prob, 3)) for d in detections[:3]]
-                )
-                
-                # If confidence is high and language is supported, use it immediately
-                if confidence > 0.8 and detected_language in SUPPORTED_LANGUAGES:
-                    synthesis_logger.info(
-                        "high_confidence_library_detection",
-                        session_id=session_id,
-                        detected_language=detected_language,
-                        confidence=confidence
-                    )
-                    
-                    # Update session preference
-                    session_manager.set_session_language_preference(session_id, detected_language, confidence)
-                    
-                    result = {
-                        "language": detected_language,
-                        "language_name": SUPPORTED_LANGUAGES[detected_language],
-                        "confidence": confidence,
-                        "supported": True,
-                        "detection_method": "langdetect_library",
-                        "library_detections": [(d.lang, d.prob) for d in detections[:3]]
-                    }
-                    
-                    synthesis_logger.info(
-                        "language_detection_completed_library_success",
-                        session_id=session_id,
-                        **result
-                    )
-                    
-                    return result
-            else:
-                raise LangDetectException("No detections returned")
-                
-    except LangDetectException as e:
+    except Exception as e:
         synthesis_logger.warning(
-            "langdetect_library_failed",
+            "fasttext_detection_failed",
             session_id=session_id,
             error_message=str(e),
-            question_length=len(user_question),
-            falling_back_to_patterns=True
-        )
-    
-    # STEP 3: FALLBACK TO PATTERNS (only if library fails)
-    synthesis_logger.info(
-        "using_pattern_fallback",
-        session_id=session_id,
-        reason="langdetect_failed" if not detected_language else "low_confidence"
-    )
-    
-    question_lower = user_question.lower()
-    
-    # Spanish fallback patterns
-    spanish_indicators = ["¿", "ñ", "cuál", "cómo", "dónde", "cuándo", "cuánto", "costo", "es el", "es la"]
-    spanish_matches = [indicator for indicator in spanish_indicators if indicator in question_lower]
-    
-    if spanish_matches:
-        synthesis_logger.info(
-            "spanish_patterns_detected_fallback",
-            session_id=session_id,
-            spanish_matches=spanish_matches
+            question_length=len(user_question)
         )
         
-        detected_language = "es"
-        confidence = 0.8
-        detection_method = "spanish_patterns_fallback"
+        # If FastText fails completely, return as unsupported
+        return {
+            "language": "unknown",
+            "language_name": "Unknown",
+            "confidence": 0.0,
+            "supported": False,
+            "detection_method": "fasttext_failed"
+        }
     
-    # English fallback patterns (very restrictive)
-    elif any(phrase in question_lower for phrase in ["what is", "how do", "can i", "do i need"]):
-        synthesis_logger.info(
-            "english_patterns_detected_fallback",
-            session_id=session_id
-        )
+    # STEP 3: Check if detected language is supported
+    if detected_language:
+        is_supported = detected_language in SUPPORTED_LANGUAGES
         
-        detected_language = "en" 
-        confidence = 0.7
-        detection_method = "english_patterns_fallback"
-    
-    # French fallback patterns
-    elif any(phrase in question_lower for phrase in ["quel est", "comment", "où", "quand"]):
-        detected_language = "fr"
-        confidence = 0.7
-        detection_method = "french_patterns_fallback"
-    
-    # Portuguese fallback patterns  
-    elif any(phrase in question_lower for phrase in ["qual é", "como", "onde", "quando"]):
-        detected_language = "pt"
-        confidence = 0.7
-        detection_method = "portuguese_patterns_fallback"
+        if is_supported:
+            # Language is supported - process normally
+            language_name = SUPPORTED_LANGUAGES[detected_language]
+            
+            synthesis_logger.info(
+                "supported_language_detected",
+                session_id=session_id,
+                detected_language=detected_language,
+                confidence=confidence
+            )
+            
+            # Update session preference for confident detections
+            if confidence > 0.6:
+                session_manager.set_session_language_preference(session_id, detected_language, confidence)
+            
+            return {
+                "language": detected_language,
+                "language_name": language_name,
+                "confidence": confidence,
+                "supported": True,
+                "detection_method": detection_method
+            }
+        
+        else:
+            # Language detected but NOT supported
+            synthesis_logger.info(
+                "unsupported_language_detected",
+                session_id=session_id,
+                detected_language=detected_language,
+                confidence=confidence,
+                supported_languages=list(SUPPORTED_LANGUAGES.keys())
+            )
+            
+            return {
+                "language": detected_language,
+                "language_name": detected_language.upper(),
+                "confidence": confidence,
+                "supported": False,
+                "detection_method": detection_method
+            }
     
     # STEP 4: Final fallback
-    if not detected_language:
-        synthesis_logger.warning(
-            "all_detection_methods_failed_using_default",
-            session_id=session_id,
-            question=user_question[:50]
-        )
-        
-        detected_language = session_language or "en"
-        confidence = 0.5
-        detection_method = "default_fallback"
-    
-    # STEP 5: Update session and return result
-    if detected_language in SUPPORTED_LANGUAGES and confidence > 0.6:
-        session_manager.set_session_language_preference(session_id, detected_language, confidence)
-    
-    is_supported = detected_language in SUPPORTED_LANGUAGES
-    language_name = SUPPORTED_LANGUAGES.get(detected_language, "Unknown")
-    
-    result = {
-        "language": detected_language,
-        "language_name": language_name,
-        "confidence": confidence,
-        "supported": is_supported,
-        "detection_method": detection_method
-    }
-    
-    synthesis_logger.info(
-        "language_detection_completed_with_method",
-        session_id=session_id,
-        **result
+    synthesis_logger.warning(
+        "no_language_detected",
+        session_id=session_id
     )
     
-    return result
+    return {
+        "language": "unknown",
+        "language_name": "Unknown",
+        "confidence": 0.0,
+        "supported": False,
+        "detection_method": "no_detection"
+    }
 
 def create_language_not_supported_response(detected_language: str, language_name: str, user_question: str, session_id: str) -> str:
     """Create a polite response for unsupported languages, encouraging English use."""
