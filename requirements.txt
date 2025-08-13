@@ -42,3 +42,4 @@ selenium~=4.34.0
 unstructured~=0.18.1
 tavily-python
 langchain-tavily
+fast-langdetect>=0.4.0
