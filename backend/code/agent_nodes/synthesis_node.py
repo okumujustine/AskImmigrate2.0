@@ -163,7 +163,7 @@ def detect_and_validate_language(user_question: str, conversation_history: list,
     }
 
 def create_language_not_supported_response(detected_language: str, language_name: str, user_question: str, session_id: str) -> str:
-    """Create a polite response for unsupported languages, encouraging English use."""
+    """Create a simple, clean response for unsupported languages."""
     
     synthesis_logger.info(
         "creating_unsupported_language_response",
@@ -172,134 +172,24 @@ def create_language_not_supported_response(detected_language: str, language_name
         language_name=language_name
     )
     
-    # Basic responses in common unsupported languages
-    unsupported_responses = {
-        "de": {
-            "title": "# Sprache nicht unterstützt / Language Not Supported",
-            "message": "Entschuldigung, ich kann nur auf Englisch, Spanisch, Französisch und Portugiesisch antworten.",
-            "request": "**Bitte stellen Sie Ihre Frage auf Englisch.**"
-        },
-        "it": {
-            "title": "# Lingua non supportata / Language Not Supported", 
-            "message": "Mi dispiace, posso rispondere solo in inglese, spagnolo, francese e portoghese.",
-            "request": "**Si prega di fare la domanda in inglese.**"
-        },
-        "zh": {
-            "title": "# 不支持的语言 / Language Not Supported",
-            "message": "抱歉，我只能用英语、西班牙语、法语和葡萄牙语回答。",
-            "request": "**请用英语提问。**"
-        },
-        "ar": {
-            "title": "# اللغة غير مدعومة / Language Not Supported",
-            "message": "آسف، يمكنني الإجابة فقط باللغة الإنجليزية أو الإسبانية أو الفرنسية أو البرتغالية.",
-            "request": "**يرجى طرح سؤالك باللغة الإنجليزية.**"
-        }
-    }
-    
-    # Get language-specific response or use generic English
-    if detected_language in unsupported_responses:
-        lang_response = unsupported_responses[detected_language]
-        response = f"""{lang_response['title']}
+    return """# Language Not Supported
 
-{lang_response['message']}
+I can only respond in English, Spanish, French, and Portuguese.
 
-{lang_response['request']}
+Please ask your question in English.
 
----
-
-**Sorry, I can only respond in English, Spanish, French, and Portuguese.**
-
-Please ask your question in English so I can provide you with accurate US immigration information.
-
-## Supported Languages / Idiomas Soportados
-- 🇺🇸 **English** - Full support
-- 🇪🇸 **Español** - Soporte completo  
-- 🇫🇷 **Français** - Support complet
-- 🇧🇷 **Português** - Suporte completo
-
-## Official Resources
-- **USCIS Website**: https://www.uscis.gov
-- **Contact USCIS**: https://www.uscis.gov/contactcenter"""
-    else:
-        # Generic response for unknown languages
-        response = f"""# Language Not Supported
-
-**Sorry, I can only respond in English, Spanish, French, and Portuguese.**
-
-I detected that your question might be in **{language_name}**, but I cannot provide accurate immigration information in this language.
-
-**Please ask your question in English** so I can provide you with precise US immigration guidance.
-
-## Supported Languages / Idiomas Soportados
-- 🇺🇸 **English** - Full support
-- 🇪🇸 **Español** - Soporte completo  
-- 🇫🇷 **Français** - Support complet
-- 🇧🇷 **Português** - Suporte completo
+## Supported Languages
+🇺🇸 **English** | 🇪🇸 **Español** | 🇫🇷 **Français** | 🇧🇷 **Português**
 
 ## Official Resources
 - **USCIS Website**: https://www.uscis.gov
 - **Contact USCIS**: https://www.uscis.gov/contactcenter"""
 
-    return response
-
-def test_language_detection(session_id="test"):
-    """Test function to verify language detection is working"""
-    test_questions = [
-        "¿Cuál es el costo de la visa EB-1?",  # Spanish
-        "What is the cost of EB1 visa?",       # English
-        "Quel est le coût du visa EB-1?",      # French
-        "Qual é o custo do visto EB-1?"        # Portuguese
-    ]
-    
-    synthesis_logger.info(
-        "language_detection_test_starting",
-        session_id=session_id,
-        test_questions_count=len(test_questions)
-    )
-    
-    for i, question in enumerate(test_questions):
-        try:
-            synthesis_logger.info(
-                f"testing_question_{i+1}",
-                session_id=session_id,
-                question=question,
-                question_length=len(question)
-            )
-            
-            # Test the language detection function directly
-            result = detect_and_validate_language(question, [], session_id)
-            
-            synthesis_logger.info(
-                f"test_result_{i+1}",
-                session_id=session_id,
-                question=question[:30],
-                detected_language=result.get("language", "unknown"),
-                confidence=result.get("confidence", 0),
-                supported=result.get("supported", False),
-                detection_method=result.get("detection_method", "unknown")
-            )
-            
-        except Exception as e:
-            synthesis_logger.error(
-                f"test_failed_{i+1}",
-                session_id=session_id,
-                question=question[:30],
-                error_type=type(e).__name__,
-                error_message=str(e)
-            )
-    
-    synthesis_logger.info(
-        "language_detection_test_completed",
-        session_id=session_id
-    )
 
 def synthesis_node(state: ImmigrationState) -> Dict[str, Any]:
     """
     Enhanced Strategic Synthesis Agent with extensive logging for debugging.
     """
-    
-    # TEMPORARY: Test language detection
-    test_language_detection(state.get("session_id", "debug"))
 
     if state.get("synthesis_approved", False):
         synthesis_logger.info("synthesis_already_approved", details="Synthesis already approved, skipping")
