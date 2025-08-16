@@ -1,6 +1,5 @@
 torch==2.1.2
 sentence-transformers>=2.5.1
-transformers==4.41.1
 safetensors==0.4.3
 numpy<2.0
 langchain>=0.3.26
@@ -38,8 +37,7 @@ langchain_mcp_adapters~=0.1.7
 aiohttp>=3.8.0
 pygithub~=2.6.1
 langchain_tavily~=0.2.5
-selenium~=4.34.0
-unstructured~=0.18.1
 tavily-python
+langchain-tavily
 langchain-tavily
 fast-langdetect>=0.4.0

@@ -1,12 +1,12 @@
+import hashlib
 import os
 import shutil
-import uuid
-import hashlib
 import time
+import uuid
 from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
-from typing import Iterator, Union, Optional
+from typing import Iterator, Optional, Union
 
 import chromadb
 import yaml
@@ -96,7 +96,7 @@ def get_cpu_embedder():
     from langchain_huggingface import HuggingFaceEmbeddings
 
     embedder = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-mpnet-base-v2",
+        model_name="sentence-transformers/all-MiniLM-L6-v2",
         model_kwargs={"device": "cpu"},
     )
     

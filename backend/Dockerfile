@@ -22,7 +22,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Install PyTorch CPU-only first (smaller)
 RUN pip install --no-cache-dir \
-    torch==2.1.2+cpu torchvision==0.16.2+cpu torchaudio==2.1.2+cpu \
+    torch==2.1.2 \
     --index-url https://download.pytorch.org/whl/cpu
 
 # Install other dependencies  
@@ -38,7 +38,7 @@ RUN mkdir -p /app/cache
 COPY . ./backend
 
 # Set Python path so imports work correctly
-ENV PYTHONPATH="/app:$PYTHONPATH"
+ENV PYTHONPATH="/app"
 
 # Pre-download the all-mpnet-base-v2 model during build
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-mpnet-base-v2')"
@@ -55,6 +55,6 @@ EXPOSE 8088
 CMD ["uvicorn", "backend.code.api:app", \
      "--host", "0.0.0.0", \
      "--port", "8088", \
-     "--workers", "4", \
+     "--workers", "1", \
      "--timeout-keep-alive", "5", \
      "--access-log"]

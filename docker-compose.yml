@@ -1,6 +1,6 @@
 services:
   askimmigrate:
-    build: ./backend
+    image: 9239/ask-imi-ui
     ports:
       - "8088:8088"
     env_file:
