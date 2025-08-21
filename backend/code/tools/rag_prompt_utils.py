@@ -1,23 +1,38 @@
+import logging
 from backend.code.prompt_builder import build_prompt_from_config
+
+logger = logging.getLogger(__name__)
 
 
 def build_query_prompt(prompt_template, documents, question, history) -> str:
     """
     Build a RAG-specific prompt that combines conversation history, relevant documents, and user question.
-    
+
     Args:
         prompt_template: The prompt template configuration
         documents: Retrieved relevant documents
         question: User's question
         history: Conversation history
-        
+
     Returns:
         Formatted prompt string ready for LLM
     """
-    history_block = f"Conversation so far:\n{history}\n\n" if history else ""
-    docs_block = f"Relevant documents:\n\n{documents}\n\n"
-    question_block = f"User's question:\n\n{question}"
+    try:
+        if not question:
+            logger.error("Question is required but not provided")
+            raise ValueError("Question cannot be empty")
 
-    input_data = f"{history_block} {docs_block} {question_block}"
+        if not isinstance(question, str):
+            logger.error(f"Question must be a string, got {type(question)}")
+            raise TypeError("Question must be a string")
 
-    return build_prompt_from_config(prompt_template, input_data=input_data)
+        history_block = f"Conversation so far:\n{history}\n\n" if history else ""
+        docs_block = f"Relevant documents:\n\n{documents}\n\n" if documents else ""
+        question_block = f"User's question:\n\n{question}"
+
+        input_data = f"{history_block} {docs_block} {question_block}"
+
+        return build_prompt_from_config(prompt_template, input_data=input_data)
+    except Exception as e:
+        logger.error(f"Error building query prompt: {e}")
+        raise

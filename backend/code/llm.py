@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-
 def get_llm(model_name: str, temperature: float = 0.2) -> BaseChatModel:
     if model_name == "gemini-2.5-flash":
         return ChatGoogleGenerativeAI(
