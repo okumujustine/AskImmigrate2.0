@@ -1,5 +1,5 @@
 # Makefile for AskImmigrate 2.0
-IMAGE_TAG    ?= 2.0.1
+IMAGE_TAG    ?= 0.0.1
 IMAGE_REG    := dunky2012
 
 ASKIMMIGRATE_IMG := $(IMAGE_REG)/askimmigrate:$(IMAGE_TAG)
